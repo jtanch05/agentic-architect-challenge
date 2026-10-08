@@ -43,6 +43,26 @@ Replace the example URL with a page you are allowed to scrape. Add `--render` fo
 
 Part 3 commands: `/reset` clears session memory and `/quit` exits. Its README includes a sequence of questions that demonstrates document answers, memory and tool selection.
 
+## Tests
+
+Install the development dependencies and Chromium, then run the offline suite:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m playwright install chromium
+python -m pytest -q
+```
+
+Tests are grouped by Part 2, Part 3, shared provider handling and live Gemini evaluation. See the [test guide](tests/README.md) for the cases, expected outcomes and commands for each group. Offline model responses are simulated; HTTP and browser cases use a local server and real Chromium.
+
+Live tests are skipped unless explicitly enabled. To run them with a local API key:
+
+```powershell
+python -m pytest tests/live --live -q
+```
+
+Live tests consume Gemini quota. Offline results do not establish real-model accuracy.
+
 ## Logging and limitations
 
 Logs on standard error show processing steps, model response times, chunk counts, tool use and summary-length checks. They do not include API keys, document text or user prompts. Requests run one at a time. This is a prototype and has not been load tested.

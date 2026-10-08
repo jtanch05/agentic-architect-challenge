@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><title>Dynamic article fixture</title></head><body>
+<main id="article">Loading...</main>
+<script>
+setTimeout(() => {
+  document.getElementById("article").textContent = "Rendered evidence: This article is inserted by JavaScript after page load. OrbitDesk Starter costs MYR 20 and Team costs MYR 35 per user per month. Support is available from 09:00 to 17:00 on weekdays in Malaysia. This fictional fixture verifies that a browser fallback waits for readable article content rather than summarising an empty application shell.";
+}, 400);
+</script></body></html>
