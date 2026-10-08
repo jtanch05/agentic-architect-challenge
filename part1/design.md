@@ -21,6 +21,8 @@ The following assumptions would need confirmation from the business:
 
 The diagram shows the main processing steps, approved information sources, the Gemini connection, and the two outcomes: a saved draft or a human support ticket. The flow below also shows the retry and search-improvement paths.
 
+Solid arrows show processing order. Dashed arrows show data access or API calls, with two arrowheads for two-way exchanges. Intake reads prior outcomes and records the contact before the escalation check uses its history. The draft reaches validation together with its source references. The outputs also save the final processing state; these writes are omitted from the overview to keep the diagram readable.
+
 Before writing a reply, the system checks for data loss, a service outage, or a security breach. It also checks whether the customer has contacted support more than three times in seven days. Any of these conditions sends the email to a human. Missing customer details, incomplete history, or uncertain risk also blocks drafting.
 
 ### Processing flow
