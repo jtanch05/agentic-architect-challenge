@@ -2,26 +2,26 @@
 
 ## Scope and assumptions
 
-This is the Part 1 design deliverable; the runnable document agent is Part 3. The system classifies emails, drafts responses from an approved PDF/FAQ knowledge base, and records human handoffs. Its output is a saved draft or a human ticket. Sending emails and issuing refunds are outside the requested scope.
+Part 1 proposes a system for handling customer-support emails. It assigns categories, prepares replies from approved PDFs and FAQs, and sends high-risk cases to human support staff. The system saves either a reply draft or a support ticket. Sending emails and approving refunds are outside this design. The working document agent is described in Part 3.
 
-No employer knowledge base, refund policy, traffic figures, or customer-history schema was supplied. OrbitDesk's Part 3 handbook is fictional demonstration data.
+The assessment did not provide a knowledge base, refund policy, expected email volume, or customer-history format. The OrbitDesk handbook in Part 3 is fictional sample data.
 
-Assumptions to confirm with the business:
+The following assumptions would need confirmation from the business:
 
-- A contact is one distinct received support email identified by a stable message ID. Retries are not new contacts.
-- The current email counts. More than 3 means the fourth contact triggers escalation.
-- The window includes timestamps from `received_at - 7 days` through `received_at`, inclusive, using UTC. Later contacts are not included in an older email's count.
-- Contacts are associated with a verified customer ID; unresolved identity or unavailable history requires human handling.
-- Categories may overlap: an email can be both Billing and Technical. Feedback is another supported label.
-- A policy owner approves extracted policy content before it becomes usable by the assistant.
+- One contact is one received support email with a unique message ID. Processing the same email again does not create another contact.
+- The current email counts towards the total. The fourth contact within seven days triggers a human handoff.
+- The seven-day period includes both end points, from `received_at - 7 days` to `received_at`, using UTC. An email received later is not counted when processing an earlier email.
+- Each contact belongs to a verified customer ID. If the customer cannot be identified or their history is unavailable, the email goes to a human.
+- An email can have more than one category, such as Billing and Technical. Feedback is another supported category.
+- A policy owner must approve extracted policy information before the assistant can use it.
 
 ## System architecture diagram
 
 ![Customer-support email architecture](system-design.png)
 
-The diagram shows application stages, authoritative/derived knowledge sources, the model dependency, and human/draft outcomes. The detailed control flow below includes the retry and refinement branches.
+The diagram shows the main processing steps, approved information sources, the Gemini connection, and the two outcomes: a saved draft or a human support ticket. The flow below also shows the retry and search-improvement paths.
 
-The escalation gate flags mentions of data loss, service outage or a security breach, and more than three distinct contacts from the same verified customer in the seven-day window. The current email counts. Unknown identity, incomplete history or unresolved risk requires human handoff before drafting.
+Before writing a reply, the system checks for data loss, a service outage, or a security breach. It also checks whether the customer has contacted support more than three times in seven days. Any of these conditions sends the email to a human. Missing customer details, incomplete history, or uncertain risk also blocks drafting.
 
 ### Processing flow
 
@@ -42,70 +42,70 @@ flowchart TD
     G -->|Passed| I[Save draft and processing outcome]
 ```
 
-Critical emails are flagged immediately. Their category can be recorded by a classification-only task for the human queue; that task has no drafting capability and cannot delay the critical flag or handoff.
+Critical emails are flagged immediately. A separate task can assign categories to help staff organise the ticket, but it cannot write a reply or delay the handoff.
 
-## Responsibilities and authority
+## Component responsibilities
 
-| Component | Responsibility and enforcement |
+| Component | Responsibility |
 | --- | --- |
-| Intake and state store | Store the distinct contact before counting; one record per message ID. Atomically claim processing and persist the terminal outcome. A retry returns an existing outcome or resumes pending work. |
-| Escalation gate | Block drafting until a risk decision is recorded as passed. Query distinct contacts for the verified customer and window. Literal mentions of data loss, service outage, or security breach always flag. Detect additional phrase variants with a language classifier; uncertain/failed detection goes to humans. |
-| Classifier | Return validated labels from Billing, Technical, Feedback, plus an unresolved result when necessary. Allow multiple labels. Do not let model output override the escalation gate. |
-| Knowledge search | Read approved PDF/FAQ sections with document ID, section/page, and version. Search indexes are derived from these sources and can be rebuilt. |
-| Bounded agent | Choose relevant knowledge searches based on the customer's question and inspect returned evidence. Permit one query refinement; missing evidence then ends in human handoff. No access to sending, refund issuance, or bypassing the gate. |
-| Draft and validator | Draft only from retrieved evidence. Require source references; verify the cited excerpts exist and check policy constraints. Withhold unsupported answers. |
-| Human queue | Persist escalation reasons, categories when available, and useful source references. Give humans the original email in the protected ticket system. |
+| Email intake and processing store | Record each contact before counting it, with one record for each message ID. Claim the task in one database action so two workers cannot process the same email. Save the final result. If processing is retried, return the saved result or continue unfinished work. |
+| Escalation check | Block drafting until the risk check passes. Count the customer's separate contacts in the seven-day period. Always flag the three required critical terms. Use a language classifier for similar wording. Send uncertain results or failed checks to a human. |
+| Email classifier | Assign one or more categories: Billing, Technical, and Feedback. Mark unclear cases as unresolved. The model cannot override the escalation check. |
+| Knowledge search | Search approved PDF and FAQ sections, keeping the document ID, version, and page or section reference. The search index is built from these sources and can be rebuilt. |
+| Agent with limited actions | Choose searches that match the customer's question and review the results. Allow one improved search if the first result is insufficient. If evidence is still missing, send the case to a human. The agent cannot send emails, issue refunds, or skip the escalation check. |
+| Reply writer and checker | Write the draft from retrieved information. Require source references, check that quoted text exists, and apply the policy rules. Do not produce a reply without support. |
+| Human support queue | Save the handoff reason, any available categories, and useful source references. Staff can access the original email through the protected ticket system. |
 
-## Refund-policy safeguard
+## Preventing incorrect refund-policy statements
 
-RAG and an instruction alone cannot ensure that every generated policy claim is correct. Use a narrower output path for refund-policy questions:
+Finding relevant information and telling an LLM to follow it does not guarantee a correct reply. Refund-policy replies therefore use approved templates:
 
-1. Ingest the approved policy PDF/FAQ, retaining its source and version. A policy owner approves the structured record and customer-facing template; automatic extraction alone is not authoritative.
-2. Resolve the applicable policy version. If a policy is missing or contradictory, record a human handoff.
-3. Populate approved template text from approved fields for deadlines, eligibility and exclusions. Insert that text programmatically; keep it out of free-form model rewriting.
-4. For any email involving refunds, keep all policy/eligibility wording within this controlled path. Mixed or ambiguous requests that cannot be expressed safely go to humans. Never claim approval without verified customer facts and human authority.
+1. Extract the policy from an approved PDF or FAQ and store its source and version. The policy owner checks the stored fields and customer-facing template. Extracted text is not approved automatically.
+2. Select the relevant policy version. If the policy is missing or contradictory, send the case to a human.
+3. Fill the approved template with verified deadlines, eligibility rules, and exclusions. Code inserts this text directly, so the model cannot rewrite the policy terms.
+4. Use this process for every statement about refunds or eligibility. Send mixed or unclear requests to a human when the template cannot answer them safely. Do not say that a refund is approved without verified customer information and human authorisation.
 
-An LLM may classify intent or formulate a knowledge query, but it cannot alter approved policy terms. The Part 3 agent demonstrates general document grounding and does not implement this production template workflow.
+The LLM can identify what the customer wants or choose a search query, but it cannot change approved policy terms. Part 3 demonstrates document-based answers; it does not implement this refund-template process.
 
-## Small data model
+## Data records
 
-- `Contact`: unique message ID, verified customer ID, received timestamp. Index customer ID and timestamp for window queries.
-- `Processing`: message ID, state (`pending`, `checking`, `human`, `draft`), risk decision, reason, categories, source IDs, policy version, output ID. One owner at a time; terminal outcome survives retries.
-- `KnowledgeSection`: document ID, version, section/page ID, text, approval status.
-- `RefundPolicy`: policy ID/version, approved fields, approved template, source references.
+- `Contact`: unique message ID, verified customer ID and received time. Index the customer ID and timestamp to support seven-day history searches.
+- `Processing`: message ID, current state (`pending`, `checking`, `human`, `draft`), risk decision, reason, categories, source IDs, policy version and output ID. Only one worker owns the task at a time, and the final result is kept when processing is retried.
+- `KnowledgeSection`: document ID, version, section or page ID, text and approval status.
+- `RefundPolicy`: policy ID and version, approved fields, approved template and source references.
 
-The customer-history and processing records are authoritative. Retrieval indexes are derived. The chosen prototype needs no distributed consistency machinery; a production implementation should use transactions for contact deduplication and state transitions. Concurrency for different emails from the same customer must not lose contacts or bypass the threshold.
+Customer-history and processing records are the source of truth. The search index is a separate copy used to find information. A production version should use database transactions to prevent duplicate contacts and update processing states safely. When several emails from one customer arrive together, all contacts must be counted so the fourth contact cannot avoid escalation.
 
-## Failure behavior
+## Handling failures
 
-| Failure | Outcome |
+| Problem | Response |
 | --- | --- |
-| Unknown identity or history lookup failure | Human handoff; never assume zero contacts. |
-| Explicit critical phrase, paraphrase classified critical, or uncertain risk | Flag before drafting, then save human ticket. Test false negatives and negation cases separately. |
-| Knowledge missing/conflicting after one refinement | Human handoff with reason; no guessed response. |
-| Model timeout, quota error, invalid labels or invalid evidence | Bound retry attempts; save human ticket when exhausted. |
-| Unapproved/conflicting refund policy | Block the refund response and request human handling. |
-| Duplicate input or worker retry | Unique message ID and persisted state prevent duplicate contact counts or terminal outputs. |
-| State store unavailable | Leave work pending for bounded retry and alert operations; do not proceed to drafting or claim a human ticket was saved. |
-| Queue backlog or model rate limit | Limit worker concurrency; back off retries and monitor oldest pending email. Prioritise critical handoffs. |
+| Customer identity is unclear or history cannot be loaded | Send the case to a human. Do not assume there were no previous contacts. |
+| A critical phrase is found, similar wording is classified as critical, or risk is uncertain | Flag the email before drafting and save a human support ticket. Test missed detections and negative statements separately. |
+| Knowledge is missing or conflicting after one improved search | Send the case to a human with an explanation. Do not guess a reply. |
+| The model times out, reaches a quota limit, returns invalid categories, or provides unsupported evidence | Retry only within a set limit, then send the case to a human. |
+| Refund policy is unapproved or conflicting | Block the refund reply and ask a human to handle it. |
+| The same email arrives again or a worker retries it | Use the message ID and saved processing state to avoid counting the contact or saving the outcome twice. |
+| The processing store is unavailable | Keep the task pending, retry within a set limit and alert the operations team. Do not draft or claim that a ticket has been saved. |
+| The queue grows or the model limits request rates | Limit the number of workers running together, increase the delay between retries, and monitor the oldest waiting email. Prioritise critical handoffs. |
 
-There are no supplied load numbers. Establish sustainable throughput by measuring model latency, request quotas and queue age under a stated workload. For average model latency `L` seconds and `C` workers, a rough upper bound is `C/L` model requests per second before provider quotas and other work; retries consume the same capacity. Do not present this estimate as a measured benchmark.
+The assessment does not give an expected workload. Capacity would need to be measured using model response times, request quotas, and queue waiting times. With an average model latency of `L` seconds and `C` workers, `C/L` is a rough upper limit on model requests per second before other work and provider limits are considered. Retries also use this capacity. This is an estimate, not a measured benchmark.
 
-## Verification and observability
+## Planned tests and monitoring
 
-Planned Part 1 acceptance cases (design targets, not executed email-system tests):
+Part 1 is a design. These checks are planned for a future implementation and have not been run against an email service:
 
-- Each literal critical condition prevents the drafting function from being invoked.
-- Three contacts pass the count rule; four escalate. Boundary timestamps and repeated message IDs are checked.
-- History unavailable and ambiguous customer identity block drafting.
-- Multiple category labels can be returned for a mixed email.
-- Unsupported refund terms cannot appear in the controlled policy output.
-- Missing evidence, model timeout, and duplicate worker delivery reach the defined outcomes.
+- Each required critical condition prevents the reply-writing function from running.
+- Three contacts pass the contact-count rule; four trigger a handoff. Test exact time boundaries and repeated message IDs.
+- Missing history or unclear customer identity prevents drafting.
+- A mixed email can receive multiple category labels.
+- Refund replies cannot include terms that are absent from the approved policy.
+- Missing evidence, model timeouts and repeated worker tasks produce the expected outcomes.
 
-Log message ID, stage, category, escalation reason, source IDs, policy version, latency and outcome. Avoid email bodies, credentials and personal details in routine logs. Monitor escalation detection accuracy, grounded-answer errors, queue age, model error rate and token/request costs. A passing citation check establishes provenance, not semantic entailment; human sampling and adversarial evaluations remain necessary.
+Logs should record the message ID, processing step, categories, escalation reason, source IDs, policy version, response time, and outcome. Routine logs should not include email bodies, credentials, or personal details. Monitor missed critical issues, unsupported answers, queue waiting times, model errors, and usage costs. A matching citation shows where information came from, but does not prove that the answer interpreted it correctly. Human review and failure-focused tests are still needed.
 
 ## Trade-offs
 
-A controlled workflow makes mandatory gates explicit. Bounded search decisions provide useful agentic behavior without giving the model authority over escalation. Direct SDK calls keep the prototype small; LangGraph would become useful if durable workflow execution or more states justified its dependency. A full autonomous or multi-agent design adds coordination and failure paths without a requirement that needs them.
+A controlled workflow makes the required checks easy to follow and enforce. The agent can choose and improve searches, while the application controls whether drafting is allowed. Direct SDK calls keep the prototype small. LangGraph could be useful if the system later needs more workflow states or recovery after restarts. Several independent agents would add coordination work without a clear benefit for this assessment.
 
-The conservative human fallback trades automation coverage for fewer unsafe drafts. Literal checks are predictable but miss paraphrases; language detection broadens coverage but needs evaluation and cannot guarantee perfect recall. Controlled refund templates reduce writing flexibility and require policy maintenance in exchange for keeping policy terms authoritative.
+Sending uncertain cases to humans reduces the number of automated replies, but lowers the risk of unsafe drafts. Exact phrase checks are predictable, although they can miss similar wording. A language classifier can identify more cases, but it needs testing and may still miss some issues. Approved refund templates limit writing flexibility and need maintenance, but they keep policy terms under business control.

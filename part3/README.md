@@ -1,16 +1,16 @@
-# Document agent
+# Document question-answering agent
 
-The sample document is a fictional OrbitDesk support handbook. It is deliberately small and divided into numbered sections. The complete document is included in Gemini's system instruction, avoiding an unnecessary vector database and retrieval implementation for one short document.
+The agent answers questions using a fictional OrbitDesk support handbook. The document is short and divided into numbered sections. The full document is included in Gemini's system instruction, so this small example does not need a separate search index or vector database.
 
 ## Run
 
-From the repository root with dependencies and `.env` configured:
+From the repository root, after installing dependencies and configuring `.env`:
 
 ```powershell
 python -m part3.agent
 ```
 
-Try these in the same session:
+Try these questions in the same session:
 
 ```text
 My name is Jerence.
@@ -24,20 +24,38 @@ What is my name?
 /quit
 ```
 
-The terminal displays the answer and actual selected tools. Logs show tool execution and model latency without storing prompts or credentials.
+These questions show the agent remembering a name, answering questions from the document, using a calculator for arithmetic, and handling missing information. After `/reset`, the agent should no longer remember the earlier name. The terminal shows the answer and the tools that were called. Logs record tool use and model response times without storing prompts or credentials.
 
-## Agentic behavior
+## How the agent chooses a tool
 
-Gemini receives the calculator definition with function-calling mode AUTO. It decides whether arithmetic is needed. Python executes only the supported calculator, returns the result to Gemini, and lets the model finish or correct invalid arithmetic. This is a bounded reasoning/action loop, rather than a keyword-based tool switch. There is a limit of two tool calls and three model requests per question, excluding the SDK's bounded retry attempts.
+Gemini receives a description of the calculator with function-calling mode set to `AUTO`. It decides whether a question needs arithmetic. Python runs the calculator, returns the result to Gemini, and lets the model finish its answer or respond to an invalid calculation.
 
-The calculator parses an arithmetic syntax tree; it never calls `eval`. It accepts numbers, parentheses, +, -, * and /; names, function calls, exponentiation, non-finite results and division by zero are rejected.
+This gives the model a limited set of actions. The code does not choose the calculator by looking for particular words in the question. Each question allows up to two tool calls and three model requests, excluding the SDK's limited retries.
 
-## Memory and grounding
+The calculator reads the structure of an arithmetic expression instead of running it with `eval`. It supports numbers, parentheses, addition, subtraction, multiplication and division. It rejects names, function calls, powers, non-finite results, and division by zero.
 
-Each agent instance retains the latest 12 completed turns in memory. Earlier user/model messages are sent with the next question. Tool messages are kept together with their turn, preserving complete Gemini function-call messages and thought signatures. `/reset` and process exit clear memory. It is session context, not persistent identity storage; a name mentioned only in an older discarded turn may be forgotten.
+## Conversation memory
 
-Final answers have a JSON shape describing document, memory, calculation or unknown answers. Document answers require a real section ID and an exact supporting excerpt; invalid evidence is withheld. Unknown questions receive a standard missing-information response. Calculations require a successful tool result. Model output is checked in code, but source matching does not prove that every answer semantically follows from its excerpt. Memory-answer classification also relies on the model. Live evaluations and human review remain necessary; this is not a guarantee against all hallucinations.
+Each agent keeps the latest 12 completed conversation turns. Previous user messages and model replies are included with the next question. Tool messages stay with the same conversation turn, including Gemini function-call details and thought signatures needed for follow-up requests.
 
-The handbook is capped at 24,000 characters and questions at 2,000. Answers are bounded, errors are shown clearly, and failed turns are not added to completed conversation history. Provide another UTF-8 document with numbered `[S1]`, `[S2]` sections using `--document FILE`.
+Memory lasts only for the current session. `/reset` or closing the program clears it. Information from an older turn may be forgotten after that turn is removed from the 12-turn history.
 
-The production refund-template safeguard described in Part 1 is a separate proposed design, not a feature of this general document agent.
+## Checking answers against the document
+
+Gemini returns a JSON response that identifies whether the answer comes from the document, conversation memory, a calculation, or missing information.
+
+An answer based on the document must include a real section ID and an exact supporting quote. If the evidence fails these checks, the answer is not shown. Questions the document cannot answer receive a standard missing-information response. Calculation answers require a successful calculator result.
+
+These checks reduce unsupported answers, but a matching quote does not prove that the model interpreted it correctly. The model also decides whether an answer comes from conversation memory. Live model checks and human review are still needed; this approach cannot guarantee that every answer is correct.
+
+## Limits and error handling
+
+The document is limited to 24,000 characters and each question to 2,000 characters. Answers have length limits, errors are shown clearly, and failed turns are not stored in the conversation history.
+
+To use another UTF-8 document, give its sections numbered labels such as `[S1]` and `[S2]`, then run:
+
+```powershell
+python -m part3.agent --document FILE
+```
+
+The approved refund-template process in Part 1 is a separate proposed design. This document agent does not include that production safeguard.

@@ -1,17 +1,17 @@
 # Agentic Architect Challenge
 
-Developer Intern assessment using Python and Gemini: customer-support email architecture, website scraping and summarisation, and a document agent with memory and conditional tool use.
+This Developer Intern assessment uses Python and Gemini. It contains a customer-support email system design, a website scraper and summariser, and a document question-answering agent. The agent remembers recent conversation context and uses a calculator only when a question needs one.
 
 ## Deliverables
 
 | Part | Deliverable |
 | --- | --- |
-| 1 | [Email system design](part1/design.md) and [architecture diagram](part1/system-design.png): classification, escalation before drafting, knowledge grounding, refund safeguards, trade-offs and failure handling. This is a proposed architecture. |
-| 2 | [Scraping script and explanation](part2/README.md): complex-page extraction, long-content processing and a 120-word summary guardrail. |
-| 3 | [Document agent and demonstration](part3/README.md): [sample document](part3/sample_document.md), conversation memory and Gemini-selected calculator. |
-| Architecture | [One-page architecture PDF](docs/architecture.pdf) explaining the architecture, trade-offs and failure points. |
+| 1 | [Email system design](part1/design.md) and [architecture diagram](part1/system-design.png): email categories, escalation before drafting, approved knowledge sources, refund-policy safeguards, trade-offs and failure handling. This is a design proposal, not a working email service. |
+| 2 | [Scraping script and explanation](part2/README.md): complex-page extraction, long-article processing and a 120-word summary limit. |
+| 3 | [Document agent and demonstration](part3/README.md): a [sample document](part3/sample_document.md), conversation memory and a calculator selected by Gemini when needed. |
+| Architecture | [One-page architecture PDF](docs/architecture.pdf): system architecture, design trade-offs and possible failure points. |
 
-No employer knowledge base or refund policy was supplied. The OrbitDesk handbook is fictional demonstration data.
+The employer did not provide a knowledge base or refund policy. The OrbitDesk handbook is fictional and is only used to demonstrate Part 3.
 
 ## Local setup
 
@@ -26,7 +26,7 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Copy `.env.example` only if `.env` does not already contain your settings. Set `GEMINI_API_KEY` in `.env` to your [Google AI Studio API key](https://aistudio.google.com/apikey). `GEMINI_MODEL` selects the Gemini model; the configured default is `gemini-3.8-flash`. Use a model available to your account that supports function calling. Live requests consume provider quota.
+Copy `.env.example` only if `.env` does not already contain settings. Set `GEMINI_API_KEY` in `.env` to your [Google AI Studio API key](https://aistudio.google.com/apikey). `GEMINI_MODEL` selects the Gemini model; the default is `gemini-3.8-flash`. Choose a function-calling model available to your account. Live requests use your Gemini quota.
 
 For the commands below, activate the environment with `.\.venv\Scripts\Activate.ps1` or replace `python` with `.\.venv\Scripts\python.exe`. The latter works when PowerShell blocks activation.
 
@@ -39,19 +39,19 @@ python -m part3.agent
 python -m part2.scraper https://example.com
 ```
 
-Replace the example URL with a permitted article. Add `--render` for JavaScript pages. To summarise a local HTML file, use `python -m part2.scraper --html PATH_TO_FILE`.
+Replace the example URL with a page you are allowed to scrape. Add `--render` for a JavaScript page. To summarise a local HTML file, run `python -m part2.scraper --html PATH_TO_FILE`.
 
-Part 3 commands: `/reset` clears session memory and `/quit` exits. Its README includes a multi-turn demonstration covering document answers, memory and conditional tool use.
+Part 3 commands: `/reset` clears session memory and `/quit` exits. Its README includes a sequence of questions that demonstrates document answers, memory and tool selection.
 
-## Operational behavior and limitations
+## Logging and limitations
 
-Logs on stderr report stages, model-call latency, chunk counts, tools and guardrail outcomes. They omit keys, document bodies and user prompts. Requests run sequentially; no load benchmark or production reliability is claimed.
+Logs on standard error show processing steps, model response times, chunk counts, tool use and summary-length checks. They do not include API keys, document text or user prompts. Requests run one at a time. This is a prototype and has not been load tested.
 
-- Part 1 is a design, not an implemented mailbox service. Its document includes planned acceptance checks.
-- Part 2 supports ordinary public HTML and bounded browser rendering. It does not handle authentication, paywalls, CAPTCHA, infinite scrolling or every site's layout.
-- Part 3 uses one short document in full context and retains the latest 12 completed turns. Citation matching checks excerpts, not the truth of every interpretation; human review remains necessary.
-- Summary limits, sample policies and contact-counting assumptions are documented design choices, not employer-provided facts.
+- Part 1 is a proposed email system. Its safety checks would need to be implemented and tested in a real service.
+- Part 2 handles ordinary public HTML and can render JavaScript pages within time and size limits. It does not support login pages, paywalls, CAPTCHA, infinite scrolling or every site layout.
+- Part 3 sends one short document to the model and remembers the latest 12 completed turns. A matching source quote does not prove that the answer is interpreted correctly, so human review is still needed.
+- The summary length, sample policy and contact-counting rules are design choices for this assessment. The employer did not provide them.
 
 ## AI assistance
 
-Codex assisted with interpreting the assessment, drafting the design, writing code and documentation, and preparing the architecture PDF. This is AI-assisted work. The candidate should understand and be able to explain every submitted component.
+Codex assisted with interpreting the assessment, drafting the design, writing code and documentation, and preparing the architecture PDF. This is AI-assisted work. The candidate should review and be able to explain every part before submitting it.
