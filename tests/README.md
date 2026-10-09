@@ -63,7 +63,7 @@ Offline agent and summary tests replace Gemini responses with simulated response
 
 ## Verification status
 
-Following the calculator and memory improvements, the offline suite passed **64 cases** and skipped **eight live cases** on 9 October 2026. See [the verification record](../docs/test-cases.md) for the run details. These results do not measure production performance or capacity with multiple users.
+The same offline suite passed **64 cases** and skipped **eight live cases** both before and after the code was reorganised on 9 October 2026. See [the verification record](../docs/test-cases.md) for the run details. These results do not measure production performance or capacity with multiple users.
 
 Earlier live runs passed four different cases using a previous version of the code. The latest memory/reset and calculator tests both stopped on HTTP 429. The updated short and long summary tests have not been run. Earlier successes do not establish that the current live suite passes.
 

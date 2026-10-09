@@ -36,6 +36,8 @@ For a valid calculation answer, Python displays the actual expression and tool r
 
 The model chooses whether to call the calculator; the code does not make that choice by checking for keywords. Each question allows up to two tool calls and three model requests. These counts exclude the SDK's limited automatic retries.
 
+`ask()` manages model requests and saves completed turns. `_execute_tools()` runs the requested calculator calls and prepares their responses for Gemini. Separate helpers parse the final JSON, verify memory quotes and check document sources. `validate_answer()` applies these checks before returning an answer.
+
 The calculator checks the structure of an arithmetic expression instead of executing it with `eval`. It supports numbers, parentheses, addition, subtraction, multiplication and division. It rejects names, function calls, powers, division by zero and results that are infinite or not a number.
 
 ## Conversation memory

@@ -2,13 +2,15 @@
 
 Latest offline run: 9 October 2026. Earlier live runs: 9 October 2026. Windows, Python 3.13.1.
 
-**Latest result: 64 passed, 8 live cases skipped in 14.81 seconds.** The local report is saved at `tmp/test-results/offline.xml`. This is the time taken to run the test suite, not a measure of production performance. Each input in a parameterised test counts as a separate pytest case.
+**Latest result: 64 passed, 8 live cases skipped in 12.29 seconds.** The local report is saved at `tmp/test-results/after-refactor.xml`. This is the time taken to run the test suite, not a measure of production performance. Each input in a parameterised test counts as a separate pytest case.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/offline.xml
+.\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/after-refactor.xml
 ```
 
 The XML report can be regenerated under `tmp/`, which is excluded from Git. Tests call the actual application code and simulate responses where it calls the Gemini SDK. Tests for downloading and rendering pages use local sample files and real headless Chromium. This run did not use an external website or the live Gemini API.
+
+The same 64 tests passed before the code was reorganised, with eight live cases skipped, in 13.21 seconds. That report is saved at `tmp/test-results/before-refactor.xml`. The tests were unchanged between these runs.
 
 ## Part 3: document agent (36 executed cases)
 

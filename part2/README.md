@@ -15,6 +15,8 @@ This approach has four main problems:
 
 `scraper.py` sets timeouts for connecting to and downloading a page, and limits the HTML to 2 MiB. BeautifulSoup removes common menus, scripts and hidden elements. It then looks for the main article content, including tables.
 
+The code separates downloading from extraction. `download_html()` handles the HTTP request, size limit and network errors. `scrape_page()` chooses between extracting the downloaded HTML and rendering the page in a browser.
+
 If the extracted text contains fewer than 200 characters, Playwright opens the page in a browser and runs its JavaScript. After navigation, it waits up to five seconds for content to appear. Use `--render` to request browser rendering explicitly, for example when the downloaded HTML contains substantial placeholder text but no article. HTTP errors are reported with clear messages.
 
 The scraper supports common HTML pages, but it cannot handle every site. It does not support external CSS visibility rules, iframes, infinite scrolling, login pages, paywalls or CAPTCHA. The 2 MiB limit applies to the resulting HTML, not all files downloaded by the browser. Only scrape pages you are allowed to access.
@@ -22,6 +24,8 @@ The scraper supports common HTML pages, but it cannot handle every site. It does
 ## Handling long content
 
 The script splits the text into chunks of up to 6,000 characters. Gemini creates short notes for each chunk. The script combines these notes and summarises them again as needed until they fit into one 6,000-character input. Gemini then produces the final summary. Word and character limits make the notes shorter at each stage. Every accepted chunk is processed, including the end of the article.
+
+`summarize_text()` manages this sequence, while `reduce_notes()` handles the repeated summarisation of combined notes. Keeping these steps separate makes the main flow easier to follow.
 
 The script accepts up to **100 source chunks**. Larger inputs are rejected before any model call and must be divided into smaller inputs. This limit and the 2 MiB HTML limit are prototype choices intended to control cost and processing time.
 

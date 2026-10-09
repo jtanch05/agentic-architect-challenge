@@ -31,6 +31,18 @@ def cap_words(text, limit):
     return shortened + "…"
 
 
+def reduce_notes(notes, summarise):
+    """Combine chunk notes and shorten them until they fit one model input."""
+    combined = "\n".join(notes)
+    while len(combined) > CHUNK_CHARS:
+        combined = "\n".join(
+            cap_words(summarise(chunk, 60), 60)[:1000]
+            for chunk in textwrap.wrap(combined, width=CHUNK_CHARS, break_on_hyphens=False)
+        )
+        log_event("summary_reduced", chars=len(combined))
+    return combined
+
+
 def summarize_text(text, client, model):
     if not text.strip():
         raise ValueError("No readable page content was found.")
@@ -66,15 +78,7 @@ def summarize_text(text, client, model):
     else:
         # Every accepted source chunk is processed; reject over-budget pages rather than silently dropping a tail.
         notes = [cap_words(summarise(chunk, 80), 80)[:2000] for chunk in chunks]
-        combined = "\n".join(notes)
-        # Bounded notes shrink each level until even the synthesis fits one chunk.
-        while len(combined) > CHUNK_CHARS:
-            combined = "\n".join(
-                cap_words(summarise(chunk, 60), 60)[:1000]
-                for chunk in textwrap.wrap(combined, width=CHUNK_CHARS, break_on_hyphens=False)
-            )
-            log_event("summary_reduced", chars=len(combined))
-        summary = summarise(combined, SUMMARY_WORDS)
+        summary = summarise(reduce_notes(notes, summarise), SUMMARY_WORDS)
     if len(summary.split()) > SUMMARY_WORDS:
         summary = summarise(summary[:6000], SUMMARY_WORDS)
     capped = cap_words(summary, SUMMARY_WORDS)
@@ -124,15 +128,8 @@ def render_page(url):
         raise RuntimeError("Browser rendering failed. Install Chromium with: python -m playwright install chromium") from None
 
 
-def scrape_page(url, render=False):
-    if urlparse(url).scheme not in {"http", "https"} or not urlparse(url).hostname:
-        raise ValueError("Use an http:// or https:// URL.")
-    if render:
-        text = render_page(url)
-        if not text or text.lower().strip(". ") in {"loading", "please enable javascript", "enable javascript"}:
-            raise ValueError("No readable content was found after rendering.")
-        log_event("page_extracted", method="browser", chars=len(text))
-        return text
+def download_html(url):
+    """Download HTML within the size limit and report HTTP or network errors."""
     try:
         with requests.get(url, timeout=(5, 20), stream=True, headers={"User-Agent": "AssessmentScraper/1.0"}) as response:
             response.raise_for_status()
@@ -144,10 +141,22 @@ def scrape_page(url, render=False):
                 html.extend(block)
                 if len(html) > MAX_HTML_BYTES:
                     raise ValueError("Page exceeds the 2 MiB HTML limit.")
-            text = extract_text(bytes(html))
+            return bytes(html)
     except requests.RequestException as exc:
         status = exc.response.status_code if exc.response is not None else "network"
         raise RuntimeError(f"Page download failed ({status}); check the URL or try later.") from None
+
+
+def scrape_page(url, render=False):
+    if urlparse(url).scheme not in {"http", "https"} or not urlparse(url).hostname:
+        raise ValueError("Use an http:// or https:// URL.")
+    if render:
+        text = render_page(url)
+        if not text or text.lower().strip(". ") in {"loading", "please enable javascript", "enable javascript"}:
+            raise ValueError("No readable content was found after rendering.")
+        log_event("page_extracted", method="browser", chars=len(text))
+        return text
+    text = extract_text(download_html(url))
     if len(text) < 200:
         rendered = render_page(url)
         if len(rendered) > len(text):

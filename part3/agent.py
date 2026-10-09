@@ -137,62 +137,82 @@ class DocumentAgent:
                 raise RuntimeError("Gemini returned a tool call without its message.")
             # Preserve the complete model message, including Gemini thought signatures.
             turn.append(response.candidates[0].content)
-            results = []
-            for call in calls:
-                if call.name != "calculator":
-                    raise RuntimeError("Gemini requested an unsupported tool.")
-                self.last_tools.append(call.name)
-                try:
-                    result = {"result": calculator(**(call.args or {}))}
-                    calculations.append((call.args["expression"], result["result"]))
-                except (ValueError, TypeError) as exc:
-                    result = {"error": str(exc)}
-                    calculations.clear()
-                log_event("tool_call", tool=call.name, success="result" in result)
-                results.append(types.Part(function_response=types.FunctionResponse(
-                    name=call.name, id=call.id, response=result,
-                )))
+            results = self._execute_tools(calls, calculations)
             turn.append(types.Content(role="user", parts=results))
         raise RuntimeError("Agent could not complete the answer within its request limit.")
 
+    def _execute_tools(self, calls, calculations):
+        """Run calls, update calculation evidence and return Gemini response parts."""
+        results = []
+        for call in calls:
+            if call.name != "calculator":
+                raise RuntimeError("Gemini requested an unsupported tool.")
+            self.last_tools.append(call.name)
+            try:
+                result = {"result": calculator(**(call.args or {}))}
+                calculations.append((call.args["expression"], result["result"]))
+            except (ValueError, TypeError) as exc:
+                result = {"error": str(exc)}
+                calculations.clear()
+            log_event("tool_call", tool=call.name, success="result" in result)
+            results.append(types.Part(function_response=types.FunctionResponse(
+                name=call.name, id=call.id, response=result,
+            )))
+        return results
+
+    def _parse_answer(self, text):
+        """Read the model's JSON and check the required response fields."""
+        # Some models wrap JSON in a Markdown fence despite the instruction.
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (text or "").strip())
+        payload = json.loads(text)
+        kind = payload["kind"]
+        answer = payload["answer"]
+        sources = payload["sources"]
+        if not isinstance(answer, str) or not answer.strip() or len(answer) > 4000:
+            raise ValueError("Invalid answer")
+        if not isinstance(sources, list) or kind not in {"document", "memory", "calculation", "unknown"}:
+            raise ValueError("Invalid response shape")
+        return payload
+
+    def _memory_answer(self, payload, user_messages):
+        """Render memory from an excerpt verified against user messages."""
+        quote = payload.get("memory_quote", "")
+        if not isinstance(quote, str) or not quote.strip() or len(quote) > 2000 or payload["sources"]:
+            return UNKNOWN
+        quote = " ".join(quote.split())
+        if not any(quote in " ".join(message.split()) for message in user_messages):
+            log_event("memory_rejected")
+            return UNKNOWN
+        return f"You said: {quote}"
+
+    def _sources_valid(self, sources):
+        """Check that each cited excerpt appears in its document section."""
+        for source in sources:
+            section = self.sections.get(source["section"], "")
+            quote = " ".join(source["quote"].split())
+            if not quote or quote not in " ".join(section.split()):
+                log_event("grounding_rejected")
+                return False
+        return True
+
     def validate_answer(self, text, calculations, user_messages):
         try:
-            # Some models wrap JSON in a Markdown fence despite the instruction.
-            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (text or "").strip())
-            payload = json.loads(text)
+            payload = self._parse_answer(text)
             kind = payload["kind"]
             answer = payload["answer"]
             sources = payload["sources"]
-            if not isinstance(answer, str) or not answer.strip() or len(answer) > 4000:
-                raise ValueError("Invalid answer")
-            if not isinstance(sources, list) or kind not in {"document", "memory", "calculation", "unknown"}:
-                raise ValueError("Invalid response shape")
             if kind == "unknown":
                 return UNKNOWN
             if calculations and kind != "calculation":
                 raise ValueError("A tool result cannot be replaced with another answer kind")
             if kind == "memory":
-                quote = payload.get("memory_quote", "")
-                if not isinstance(quote, str) or not quote.strip() or len(quote) > 2000 or sources:
-                    return UNKNOWN
-                quote = " ".join(quote.split())
-                if not any(
-                    quote in " ".join(message.split()) for message in user_messages
-                ):
-                    log_event("memory_rejected")
-                    return UNKNOWN
-                # Render the verified user excerpt, not an unrestricted model claim.
-                return f"You said: {quote}"
+                return self._memory_answer(payload, user_messages)
             if kind == "document" and not sources:
                 return UNKNOWN
             if kind == "calculation" and not calculations:
                 raise ValueError("No successful calculation")
-            for source in sources:
-                section = self.sections.get(source["section"], "")
-                quote = " ".join(source["quote"].split())
-                if not quote or quote not in " ".join(section.split()):
-                    log_event("grounding_rejected")
-                    return UNKNOWN
+            if not self._sources_valid(sources):
+                return UNKNOWN
             if kind == "calculation":
                 # Keep the actual tool values even if the model restates them incorrectly.
                 answer = "; ".join(f"{expression} = {result}" for expression, result in calculations)
