@@ -179,7 +179,7 @@ class DocumentAgent:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Chat with the fictional OrbitDesk handbook.")
+    parser = argparse.ArgumentParser(description="Chat with the fictional ClearDesk handbook.")
     parser.add_argument("--document", type=str, default=str(ROOT / "part3" / "sample_document.md"))
     parser.add_argument("--verbose", action="store_true", help="Show application diagnostics on standard error")
     args = parser.parse_args()
@@ -190,7 +190,7 @@ def main():
         document = Path(args.document).read_text(encoding="utf-8")
         client, model = create_client()
         agent = DocumentAgent(client, model, document)
-        print("OrbitDesk document agent. /reset clears memory; /quit exits.")
+        print("ClearDesk document agent. /reset clears memory; /quit exits.")
         while True:
             try:
                 question = input("You: ").strip()

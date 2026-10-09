@@ -11,7 +11,7 @@ This Developer Intern assessment uses Python and Gemini. It contains a customer-
 | 3 | [Document agent and demonstration](part3/README.md): a [sample document](part3/sample_document.md), conversation memory and a calculator selected by Gemini when needed. |
 | Architecture | [One-page architecture PDF](docs/architecture.pdf): system architecture, design trade-offs and possible failure points. |
 
-The employer did not provide a knowledge base or refund policy. The OrbitDesk handbook is fictional and is only used to demonstrate Part 3.
+The employer did not provide a knowledge base or refund policy. The ClearDesk handbook is fictional and is only used to demonstrate Part 3.
 
 ## Local setup
 

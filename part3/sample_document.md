@@ -1,9 +1,9 @@
-# OrbitDesk Support Handbook
+# ClearDesk Support Handbook
 
-Fictional sample document created for this assessment. OrbitDesk and every policy below are demonstration data, not PointStar's policies.
+Fictional sample document created for this assessment. ClearDesk and every policy below are demonstration data, not PointStar's policies.
 
 [S1] Support channels
-Contact support@orbitdesk.example for assistance. Support hours are Monday to Friday, 09:00 to 17:00 Malaysia time. The target first response is one business day; this is a target rather than a guarantee.
+Contact support@cleardesk.example for assistance. Support hours are Monday to Friday, 09:00 to 17:00 Malaysia time. The target first response is one business day; this is a target rather than a guarantee.
 
 [S2] Plans
 The Starter plan costs MYR 20 per user per month. The Team plan costs MYR 35 per user per month. These sample prices exclude taxes. Monthly fees are the plan price multiplied by the number of users.

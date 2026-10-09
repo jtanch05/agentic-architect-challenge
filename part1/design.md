@@ -4,7 +4,7 @@
 
 Part 1 proposes a system for handling customer-support emails. It assigns categories, prepares replies from approved PDFs and FAQs, and sends high-risk cases to human support staff. The system saves either a reply draft or a support ticket. Sending emails and approving refunds are outside this design. The working document agent is described in Part 3.
 
-The assessment did not provide a knowledge base, refund policy, expected email volume, or customer-history format. The OrbitDesk handbook in Part 3 is fictional sample data.
+The assessment did not provide a knowledge base, refund policy, expected email volume, or customer-history format. The ClearDesk handbook in Part 3 is fictional sample data.
 
 The following assumptions would need confirmation from the business:
 

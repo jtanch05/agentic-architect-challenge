@@ -1,6 +1,6 @@
 # Document question-answering agent
 
-The agent answers questions using a fictional OrbitDesk support handbook. The document is short and divided into numbered sections. The full document is included in Gemini's system instruction, so this small example does not need a separate search index or vector database.
+The agent answers questions using a fictional ClearDesk support handbook. The document is short and divided into numbered sections. The full document is included in Gemini's system instruction, so this small example does not need a separate search index or vector database.
 
 ## Run
 
@@ -18,7 +18,7 @@ What is my name?
 What are the support hours?
 What is the monthly Team plan fee for 28 users, excluding taxes?
 Are renewal payments refundable?
-Who is OrbitDesk's CEO?
+Who is ClearDesk's CEO?
 /reset
 What is my name?
 /quit

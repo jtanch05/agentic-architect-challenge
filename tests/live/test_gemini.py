@@ -31,7 +31,7 @@ def test_live_document_fact_without_tool(agent):
 
 
 def test_live_missing_information_is_withheld(agent):
-    assert agent.ask("What is OrbitDesk's CEO's name?") == UNKNOWN
+    assert agent.ask("What is ClearDesk's CEO's name?") == UNKNOWN
     assert agent.last_tools == []
 
 
