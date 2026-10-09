@@ -19,11 +19,13 @@ The following assumptions would need confirmation from the business:
 
 ![Customer-support email architecture](system-design.png)
 
-The diagram shows the main processing steps, approved information sources, the agent's Gemini connection, and the two outcomes: a saved draft or a human support ticket. The flow below expands classification and the single search-refinement step. Infrastructure retries and pending states are described under failure handling.
+The diagram shows the main processing steps, approved information sources and connection to Gemini. Processing ends with either a saved draft or a ticket for human support. The flow below gives more detail about classification and the one allowed search refinement. The failure-handling section explains retries and unfinished tasks.
 
-Solid arrows show processing order. Dashed arrows show data access or API calls, with two arrowheads for two-way exchanges. Intake reads prior outcomes and records the contact before the escalation check uses its history. The draft reaches validation together with its source references. The outputs also save the final processing state; these writes are omitted from the overview to keep the diagram readable.
+Solid arrows show the processing order. Dashed arrows show data access or API calls; two arrowheads indicate an exchange in both directions. Email intake checks previous results and records the contact before the escalation check reads the customer's history. Each draft is passed to validation with its source references. The system also saves the final processing state, although these database writes are omitted from the diagram for clarity.
 
-The escalation check combines mandatory phrase and contact-count rules with a language classifier for paraphrased incidents. If Gemini provides that classification, it is a separate request before drafting; the overview shows the agent's API connection rather than every model call. A classifier failure or uncertain result goes to a human. The gate passes only when no escalation condition is found and the required checks complete successfully.
+The escalation check uses mandatory phrase and contact-count rules. A language classifier also checks for incidents described in different words. If Gemini performs this classification, it receives a separate request before drafting. The diagram shows the agent's API connection without drawing every model call. Failed or uncertain checks go to a human. An email passes only when all required checks succeed and no escalation condition is found.
+
+Save the decision under the message ID. The record includes a `status` (`passed`, `escalated`, or `unknown`), the reasons, confirmation of completed history and risk checks, and the rule version. Drafting is allowed only when the status is `passed` and both checks are complete. If the record is missing, drafting remains blocked.
 
 Before writing a reply, the system checks for data loss, a service outage, or a security breach. It also checks whether the customer has contacted support more than three times in seven days. Any of these conditions sends the email to a human. Missing customer details, incomplete history, or uncertain risk also blocks drafting.
 
@@ -49,7 +51,7 @@ flowchart TD
     G -->|Passed| I[Save draft and processing outcome]
 ```
 
-Critical emails and repeat-contact cases are flagged immediately. After handoff, a separate classification task assigns one or more categories without drafting or delaying the handoff. Staff assign the categories if the model fails or cannot classify confidently.
+Critical emails and repeat-contact cases are flagged immediately. Classification takes place after the handoff so it cannot delay escalation. It assigns one or more categories without drafting a reply. Staff assign the categories if the model fails or is uncertain.
 
 ## Component responsibilities
 
@@ -72,7 +74,7 @@ Finding relevant information and telling an LLM to follow it does not guarantee 
 3. Fill the approved template with verified deadlines, eligibility rules, and exclusions. Code inserts this text directly, so the model cannot rewrite the policy terms.
 4. Use this process for every statement about refunds or eligibility. Send mixed or unclear requests to a human when the template cannot answer them safely. Do not say that a refund is approved without verified customer information and human authorisation.
 
-For a refund-only question, the reply uses the approved template; no free-form policy wording is accepted from the model. A mixed reply is saved only if its policy statements come entirely from the approved template and its remaining claims are supported. If the checker cannot establish this, it routes the case to a human. This is a proposed control that still needs implementation and adversarial testing.
+For a question about refunds only, the reply uses the approved template. Policy wording generated freely by the model is not accepted. For a question covering refunds and other topics, all policy statements must come from the template and the remaining claims must have supporting evidence. If these checks cannot be completed, the case goes to a human. This safeguard still needs to be implemented and tested with attempts to bypass it.
 
 The LLM can identify what the customer wants or choose a search query, but it cannot change approved policy terms. Part 3 demonstrates document-based answers; it does not implement this refund-template process.
 
@@ -83,7 +85,7 @@ The LLM can identify what the customer wants or choose a search query, but it ca
 - `KnowledgeSection`: document ID, version, section or page ID, text and approval status.
 - `RefundPolicy`: policy ID and version, approved fields, approved template and source references.
 
-Customer-history and processing records are the source of truth. The search index is a separate copy used to find information. A production version should use database transactions to prevent duplicate contacts and update processing states safely. Contacts for one customer must be recorded and counted in received-time order, with a stable tie-breaker for equal timestamps. This keeps concurrent workers from checking a later email before earlier eligible contacts are recorded. An email discovered late requires its affected counts to be rechecked before a pending draft is released.
+Customer-history and processing records are the source of truth. The search index is a separate copy used to find information.
 
 ## Handling failures
 
@@ -99,13 +101,14 @@ Customer-history and processing records are the source of truth. The search inde
 | The processing store is unavailable | Keep the task pending, retry within a set limit and alert the operations team. Do not draft or claim that a ticket has been saved. |
 | The queue grows or the model limits request rates | Limit the number of workers running together, increase the delay between retries, and monitor the oldest waiting email. Prioritise critical handoffs. |
 
-The assessment does not give an expected workload. Capacity would need to be measured using model response times, request quotas, and queue waiting times. With an average model latency of `L` seconds and `C` workers, `C/L` is a rough upper limit on model requests per second before other work and provider limits are considered. Retries also use this capacity. This is an estimate, not a measured benchmark.
+In production, database transactions should prevent duplicate contacts and conflicting updates. Count each customer's contacts in the order they were received. If an earlier email is discovered late, recheck the affected counts before releasing a draft. Measure model response times, API quotas and queue waiting times before deciding how many tasks can run at once. The assessment does not specify an expected workload.
 
 ## Planned tests and monitoring
 
 Part 1 is a design. These checks are planned for a future implementation and have not been run against an email service:
 
 - Each required critical condition prevents the reply-writing function from running.
+- Test direct reports, different wording such as "All our saved files disappeared", negative statements and unclear symptoms. Because the brief requires escalation when an email mentions a critical term, "There was no security breach" still triggers the phrase check. Track missed incidents and unnecessary handoffs separately, with priority given to avoiding missed incidents.
 - Three contacts pass the contact-count rule; four trigger a handoff. Test exact time boundaries and repeated message IDs.
 - Missing history or unclear customer identity prevents drafting.
 - A mixed email can receive multiple category labels.
@@ -116,6 +119,6 @@ Logs should record the message ID, processing step, categories, escalation reaso
 
 ## Trade-offs
 
-A controlled workflow makes the required checks easy to follow and enforce. The agent can choose and improve searches, while the application controls whether drafting is allowed. Direct SDK calls keep the prototype small. LangGraph could be useful if the system later needs more workflow states or recovery after restarts. Several independent agents would add coordination work without a clear benefit for this assessment.
+A controlled workflow makes the required checks clear and enforceable. The agent chooses and improves searches, while the application decides whether drafting is allowed. Direct Gemini API calls keep the prototype simple. LangGraph could be useful later if more processing states or recovery after restarts are needed. Several independent agents would add coordination work without a clear benefit for this assessment.
 
 Sending uncertain cases to humans reduces the number of automated replies, but lowers the risk of unsafe drafts. Exact phrase checks are predictable, although they can miss similar wording. A language classifier can identify more cases, but it needs testing and may still miss some issues. Approved refund templates limit writing flexibility and need maintenance, but they keep policy terms under business control.

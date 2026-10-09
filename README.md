@@ -1,6 +1,6 @@
 # Agentic Architect Challenge
 
-This Developer Intern assessment uses Python and Gemini. It contains a customer-support email system design, a website scraper and summariser, and a document question-answering agent. The agent remembers recent conversation context and uses a calculator only when a question needs one.
+This project uses Python and Gemini to address the three parts of the Developer Intern assessment. It includes a design for processing customer-support emails, a website scraper that produces concise summaries, and an agent that answers questions from a document. The agent remembers recent conversation context and can choose to use a calculator when needed.
 
 ## Deliverables
 
@@ -15,7 +15,7 @@ The employer did not provide a knowledge base or refund policy. The ClearDesk ha
 
 ## Local setup
 
-Python 3.11 or later is required; development used Python 3.13 on Windows.
+Python 3.11 or later is required. The project was developed using Python 3.13 on Windows.
 
 From the repository root in PowerShell:
 
@@ -26,9 +26,9 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-Copy `.env.example` only if `.env` does not already contain settings. Set `GEMINI_API_KEY` in `.env` to your [Google AI Studio API key](https://aistudio.google.com/apikey). `GEMINI_MODEL` selects the Gemini model; the default is `gemini-3.8-flash`. Choose a function-calling model available to your account. Live requests use your Gemini quota.
+Skip the copy command if `.env` already contains your settings. Set `GEMINI_API_KEY` in `.env` to your [Google AI Studio API key](https://aistudio.google.com/apikey). Use `GEMINI_MODEL` to select a model that supports function calling and is available to your account. The default is `gemini-3.8-flash`. Requests to Gemini count towards your API quota.
 
-For the commands below, activate the environment with `.\.venv\Scripts\Activate.ps1` or replace `python` with `.\.venv\Scripts\python.exe`. The latter works when PowerShell blocks activation.
+Before running the commands below, activate the environment with `.\.venv\Scripts\Activate.ps1`. If PowerShell blocks activation, replace `python` in each command with `.\.venv\Scripts\python.exe`.
 
 On macOS/Linux, use `python3 -m venv .venv`, `source .venv/bin/activate`, `python -m pip install -r requirements.txt`, `python -m playwright install chromium`, and `cp .env.example .env`.
 
@@ -53,7 +53,7 @@ python -m playwright install chromium
 python -m pytest -q
 ```
 
-Tests are grouped by Part 2, Part 3, shared provider handling and live Gemini evaluation. See the [test guide](tests/README.md) for the cases, expected outcomes and commands for each group. Offline model responses are simulated; HTTP and browser cases use a local server and real Chromium.
+The tests are organised into Part 2, Part 3, shared API error handling and live Gemini evaluations. The [test guide](tests/README.md) lists the cases, expected outcomes and commands for each group. Offline tests use simulated model responses. Tests for downloading and rendering pages use a local server and real Chromium.
 
 Live tests are skipped unless explicitly enabled. To run them with a local API key:
 
@@ -61,19 +61,25 @@ Live tests are skipped unless explicitly enabled. To run them with a local API k
 python -m pytest tests/live --live -q
 ```
 
-Live tests consume Gemini quota. Offline results do not establish real-model accuracy.
+Live tests use Gemini quota. Passing offline tests does not show how accurately Gemini answers real questions.
+
+Short and long articles have separate live summary tests. Run `python -m pytest tests/live --live -k short -q`, or replace `short` with `long`. These tests check whether important prices, support hours, a date and policy conditions are preserved, as well as the summary length.
 
 ## Logging and limitations
 
-Part 2 logs show processing steps, model response times, chunk counts and summary-length checks. Part 3 normally shows a waiting spinner, answers and tools used; add `--verbose` for application events on standard error. Application events omit API keys, document text and user prompts. Requests run one at a time. A simulated slow-provider check verifies sequential recovery and bounded memory; real throughput and concurrent load have not been measured.
+Part 2 logs record the processing steps, model response times, number of chunks and summary-length checks. Part 3 normally displays a waiting spinner, the answer and any tools used. Add `--verbose` to show diagnostic events on standard error. Application logs exclude API keys, document text and user prompts.
 
-HTTP 429 quota/rate-limit errors are reported without an automatic retry. Selected transient HTTP failures allow at most two attempts, each with a 30-second timeout. Error messages distinguish quota limits, permissions and provider timeouts.
+Requests run one at a time. A test with simulated delays checks that the agent recovers after errors and keeps its memory within the 12-turn limit. Performance with real Gemini requests or multiple users has not been measured.
+
+In Part 2, add `--usage-log summary-usage.log` to save model-call counts to a local file. Usage information stays out of the terminal, and this option adds no usage restrictions. The count covers calls made by the application; automatic retries by the Gemini SDK can make additional HTTP requests. Anyone testing the project needs a Gemini key with available quota. A public service would also need authentication, limits on requests per user, controls on simultaneous requests and cost monitoring.
+
+The application reports HTTP 429 errors when a rate or quota limit is reached and does not retry them automatically. Selected temporary HTTP errors allow up to two attempts, with a 30-second timeout for each attempt. Error messages explain whether the problem concerns quota, permissions or a provider timeout.
 
 - Part 1 is a proposed email system. Its safety checks would need to be implemented and tested in a real service.
 - Part 2 handles ordinary public HTML and can render JavaScript pages within time and size limits. It does not support login pages, paywalls, CAPTCHA, infinite scrolling or every site layout.
-- Part 3 sends one short document to the model and remembers the latest 12 completed turns. A matching source quote does not prove that the answer is interpreted correctly, so human review is still needed.
-- The summary length, sample policy and contact-counting rules are design choices for this assessment. The employer did not provide them.
+- Part 3 sends one short document to the model and remembers the latest 12 completed turns. A matching source quote does not prove that the model understood it correctly, so human review is still needed.
+- The 120-word summary limit, fictional sample policy and assumptions about counting contacts are project choices. The employer specifies escalation after more than three contacts in seven days.
 
 ## AI assistance
 
-Codex assisted with interpreting the assessment, drafting the design, writing code and documentation, and preparing the architecture PDF. This is AI-assisted work. The candidate should review and be able to explain every part before submitting it.
+Codex assisted with interpreting the assessment, drafting the design, writing code and documentation, and preparing the architecture PDF. This is AI-assisted work.

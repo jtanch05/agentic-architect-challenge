@@ -31,6 +31,30 @@ def test_long_source_is_chunked_and_summary_is_capped_even_if_model_ignores_limi
     assert any("opening" in prompt for prompt in prompts)
 
 
+def test_summary_pipeline_preserves_mocked_facts_and_logs_usage_only_to_file(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from part2 import scraper
+
+    html = tmp_path / "facts.html"
+    facts = "Team costs MYR 35 excluding taxes. Applications close on 15 October 2026. Renewal payments are non-refundable."
+    html.write_text(f"<main><p>{facts}</p></main>", encoding="utf-8")
+    client = Mock()
+    client.models.generate_content.return_value = SimpleNamespace(text=facts)
+    monkeypatch.setattr(scraper, "create_client", Mock(return_value=(client, "test-model")))
+    log = tmp_path / "usage.log"
+    monkeypatch.setattr("sys.argv", ["scraper", "--html", str(html), "--usage-log", str(log)])
+    scraper.main()
+    output = capsys.readouterr()
+    assert facts in output.out
+    assert facts in client.models.generate_content.call_args.kwargs["contents"]
+    assert '"minimum_calls": 1' in log.read_text(encoding="utf-8")
+    assert '"application_calls": 1' in log.read_text(encoding="utf-8")
+    assert "summary_usage_estimate" not in output.out + output.err
+    assert "summary_model_calls" not in output.out + output.err
+    assert facts not in log.read_text(encoding="utf-8")
+
+
 def test_fetches_static_html_over_http(fixture_site):
     from part2.scraper import scrape_page
 

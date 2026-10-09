@@ -33,7 +33,8 @@ def test_name_context_is_available_on_later_turn():
         messages = request["contents"]
         previous_text = " ".join(p.text or "" for m in messages for p in m.parts)
         answer = "Your name is Jerence." if "My name is Jerence" in previous_text else "I do not know."
-        return model_response('{"kind":"memory","answer":' + json.dumps(answer) + ',"sources":[]}')
+        return model_response(json.dumps({"kind": "memory", "answer": answer, "sources": [],
+                                          "memory_quote": "My name is Jerence." if "My name is Jerence" in previous_text else ""}))
 
     client = Mock()
     client.models.generate_content.side_effect = reply
@@ -59,6 +60,97 @@ def test_arithmetic_executes_selected_calculator_and_returns_result():
     agent = DocumentAgent(client, "test-model", "[S1] The Team plan costs MYR 35.")
     assert "980" in agent.ask("What is 35 times 28?")
     assert agent.last_tools == ["calculator"]
+
+
+@pytest.mark.parametrize("kind", ["calculation", "document", "memory"])
+def test_model_cannot_replace_the_calculator_result(kind):
+    call = types.FunctionCall(name="calculator", args={"expression": "35 * 28"})
+    content = types.Content(role="model", parts=[types.Part(function_call=call)])
+    client = Mock()
+    client.models.generate_content.side_effect = [
+        SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content=content)], text=None),
+        model_response(json.dumps({"kind": kind, "answer": "The fee is 9800.", "sources": [
+            {"section": "S1", "quote": "Team costs MYR 35."},
+        ]})),
+    ]
+    agent = DocumentAgent(client, "test-model", "[S1] Team costs MYR 35.")
+    if kind == "calculation":
+        answer = agent.ask("What is the Team fee for 28 users?")
+        assert "980" in answer and "9800" not in answer and "[S1]" in answer
+    else:
+        with pytest.raises(RuntimeError, match="invalid answer"):
+            agent.ask("What is the Team fee for 28 users?")
+        assert agent.turns == []
+
+
+@pytest.mark.parametrize("quote", ["", "My name is Invented.", "Refunds are guaranteed for 90 days."])
+def test_memory_label_cannot_authorize_an_unsupported_document_claim(quote):
+    from part3.agent import UNKNOWN
+
+    client = Mock()
+    client.models.generate_content.return_value = model_response(json.dumps({
+        "kind": "memory", "answer": "Refunds are guaranteed for 90 days.",
+        "sources": [], "memory_quote": quote,
+    }))
+    agent = DocumentAgent(client, "test-model", "[S1] Refund requests must be made within 14 days.")
+    assert agent.ask("What is the refund policy?") == UNKNOWN
+
+
+def test_memory_answer_is_rendered_from_user_evidence_not_model_prose():
+    client = Mock()
+    client.models.generate_content.return_value = model_response(json.dumps({
+        "kind": "memory", "answer": "Your name is Invented. Refunds last 90 days.",
+        "sources": [], "memory_quote": "My name is Jerence.",
+    }))
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    answer = agent.ask("My name is Jerence.")
+    assert "Jerence" in answer
+    assert "Invented" not in answer and "90" not in answer
+
+
+@pytest.mark.parametrize("context,question", [
+    ("Call me Jerence.", "What should you call me?"),
+    ("Prefer short answers, please.", "What answer style do I prefer?"),
+])
+def test_memory_accepts_user_context_without_a_required_prefix(context, question):
+    from part3.agent import UNKNOWN
+
+    client = Mock()
+    client.models.generate_content.return_value = model_response(json.dumps({
+        "kind": "memory", "answer": "Personal context.", "sources": [], "memory_quote": context,
+    }))
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    assert agent.ask(context) == f"You said: {context}"
+    assert agent.ask(question) == f"You said: {context}"
+    agent.reset()
+    assert agent.ask(question) == UNKNOWN
+
+
+def test_memory_can_recall_updated_name_and_reset_removes_evidence():
+    client = Mock()
+    replies = ["My name is Jerence.", "My name is Alex now.", "My name is Alex now.", "My name is Alex now."]
+    client.models.generate_content.side_effect = [model_response(json.dumps({
+        "kind": "memory", "answer": "Personal context.", "sources": [], "memory_quote": quote,
+    })) for quote in replies]
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    agent.ask("My name is Jerence.")
+    agent.ask("My name is Alex now.")
+    assert "Alex" in agent.ask("What is my name?")
+    agent.reset()
+    assert "Alex" not in agent.ask("What is my name?")
+
+
+def test_assistant_text_cannot_be_used_as_personal_memory_evidence():
+    from part3.agent import UNKNOWN
+
+    client = Mock()
+    client.models.generate_content.side_effect = [
+        model_response('{"kind":"document","answer":"My name is Invented.","sources":[{"section":"S1","quote":"Example."}]}'),
+        model_response('{"kind":"memory","answer":"Invented","sources":[],"memory_quote":"My name is Invented."}'),
+    ]
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    agent.ask("What does the document say?")
+    assert agent.ask("What is my name?") == UNKNOWN
 
 
 @pytest.mark.parametrize("expression", ["1 / 0", "__import__('os').getcwd()", "2 ** 1000", "1e309"])
@@ -97,7 +189,7 @@ def test_api_timeout_has_clear_error_and_preserves_completed_context():
     import httpx
 
     client = Mock()
-    client.models.generate_content.return_value = model_response('{"kind":"memory","answer":"Hello Jerence.","sources":[]}')
+    client.models.generate_content.return_value = model_response('{"kind":"memory","answer":"Hello Jerence.","sources":[],"memory_quote":"My name is Jerence."}')
     agent = DocumentAgent(client, "test-model", "[S1] Example.")
     agent.ask("My name is Jerence.")
     client.models.generate_content.side_effect = httpx.ReadTimeout("simulated timeout")
@@ -159,15 +251,31 @@ def test_failed_calculator_is_returned_to_model_and_cannot_authorize_a_result():
     assert agent.last_tools == ["calculator"]
 
 
+def test_later_calculation_failure_cannot_reuse_an_earlier_success():
+    responses = []
+    for expression in ("2 + 2", "1 / 0"):
+        call = types.FunctionCall(name="calculator", args={"expression": expression})
+        content = types.Content(role="model", parts=[types.Part(function_call=call)])
+        responses.append(SimpleNamespace(function_calls=[call], candidates=[SimpleNamespace(content=content)], text=None))
+    responses.append(model_response('{"kind":"calculation","answer":"4","sources":[]}'))
+    client = Mock()
+    client.models.generate_content.side_effect = responses
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    with pytest.raises(RuntimeError, match="invalid answer"):
+        agent.ask("Calculate 2 + 2, then 1 / 0.")
+    assert agent.turns == []
+
+
 def test_context_budget_keeps_latest_twelve_completed_turns():
     client = Mock()
-    client.models.generate_content.return_value = model_response(
-        '{"kind":"memory","answer":"Context acknowledged.","sources":[]}'
-    )
+    client.models.generate_content.side_effect = lambda **request: model_response(json.dumps({
+        "kind": "memory", "answer": "Context acknowledged.", "sources": [],
+        "memory_quote": request["contents"][-1].parts[0].text,
+    }))
     agent = DocumentAgent(client, "test-model", "[S1] Example.")
     for index in range(13):
         agent.ask(f"Remember context-{index:02d}.")
-    agent.ask("What is the latest context?")
+    agent.ask("Remember the latest context.")
     messages = client.models.generate_content.call_args.kwargs["contents"]
     text = " ".join(part.text or "" for message in messages for part in message.parts)
     assert "context-00" not in text
@@ -186,7 +294,8 @@ def test_sequential_slow_provider_requests_recover_and_keep_memory_bounded(caplo
         time.sleep(0.02)
         if client.models.generate_content.call_count in {4, 9, 16}:
             raise httpx.ReadTimeout("simulated provider timeout")
-        return model_response('{"kind":"memory","answer":"Acknowledged.","sources":[]}')
+        return model_response(json.dumps({"kind": "memory", "answer": "Acknowledged.", "sources": [],
+                                          "memory_quote": request["contents"][-1].parts[0].text}))
 
     client.models.generate_content.side_effect = slow_reply
     agent = DocumentAgent(client, "test-model", "[S1] Example.")

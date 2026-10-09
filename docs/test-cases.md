@@ -2,15 +2,15 @@
 
 Latest offline run: 9 October 2026. Earlier live runs: 9 October 2026. Windows, Python 3.13.1.
 
-**Latest executed result: 51 passed, 7 skipped in 19.51 seconds.** This is suite runtime, not a production throughput measurement. Parameterised inputs count as separate pytest cases.
+**Latest result: 64 passed, 8 live cases skipped in 14.81 seconds.** The local report is saved at `tmp/test-results/offline.xml`. This is the time taken to run the test suite, not a measure of production performance. Each input in a parameterised test counts as a separate pytest case.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/offline.xml
 ```
 
-An ignored XML report can be regenerated under `tmp/`. Tests use the real application interfaces. Gemini is simulated at its external SDK boundary; HTTP/browser cases use local fixtures, including real headless Chromium. No external website or live Gemini model was used in this run.
+The XML report can be regenerated under `tmp/`, which is excluded from Git. Tests call the actual application code and simulate responses where it calls the Gemini SDK. Tests for downloading and rendering pages use local sample files and real headless Chromium. This run did not use an external website or the live Gemini API.
 
-## Part 3: document agent (24 executed cases)
+## Part 3: document agent (36 executed cases)
 
 Source: [test_agent.py](../tests/part3/test_agent.py).
 
@@ -18,7 +18,7 @@ Source: [test_agent.py](../tests/part3/test_agent.py).
 | --- | --- | --- | --- | --- |
 | A01 | Ask how to contact support; model supplies a matching excerpt. | Answer includes the supported address and `[S1]`; no tool runs. | 1 | Pass |
 | A02 | State a name, ask for it later, then reset. | Prior name context is available to the model; reset removes it. | 1 | Pass |
-| A03 | Model selects `calculator("35 * 28")`. | Actual tool returns 980 to the model; final answer accepted and tool recorded. | 1 | Pass |
+| A03 | Model selects `calculator("35 * 28")`. | The tool returns 980; the answer is accepted and the tool use is recorded. | 1 | Pass |
 | A04 | Calculator receives `1 / 0`, a Python import/call, `2 ** 1000`, or `1e309`. | Reject each expression with a controlled error. | 4 | Pass |
 | A05 | Model cites an invented 90-day refund excerpt. | Withhold the unsupported answer. | 1 | Pass |
 | A06 | Model repeatedly requests calculation. | Stop at the two-tool budget; do not retain the failed turn. | 1 | Pass |
@@ -29,12 +29,21 @@ Source: [test_agent.py](../tests/part3/test_agent.py).
 | A11 | Complete 13 turns, then ask another question. | Only the latest 12 completed turns enter the next model request. | 1 | Pass |
 | A12 | 20 sequential requests, each delayed by 20 ms; requests 4, 9 and 16 time out. | Failed turns leave memory unchanged; later requests succeed; memory stays within 12 completed turns; all 20 requests have latency events. | 1 | Pass |
 | A13 | Run the CLI with and without `--verbose`, using a fake agent. | Both print answers; only verbose mode prints application events; HTTP information messages stay hidden. | 2 | Pass |
+| A14 | Calculator returns 980; model claims 9800 and labels the answer as calculation, document or memory. | Display the actual tool value for a calculation; reject the document and memory labels. | 3 | Pass |
+| A15 | Model labels an invented refund statement as memory, with missing or fabricated personal evidence. | Withhold unsupported memory answers. | 3 | Pass |
+| A16 | Model supplies a valid user quote but invents additional name or policy claims. | Display only the verified user quote and exclude the invented claims. | 1 | Pass |
+| A17 | User changes name, asks for it, then resets; model tries the old excerpt again. | Accept the verified updated excerpt before reset and reject it after reset. | 1 | Pass |
+| A18 | Personal excerpt exists only in an assistant reply. | Reject it as user-memory evidence. | 1 | Pass |
+| A19 | A calculation succeeds, a later calculation fails, and the model presents the earlier result as the answer. | Reject the answer and do not save the failed turn. | 1 | Pass |
+| A20 | User says "Call me Jerence" or "Prefer short answers, please", asks for that context, then resets. | Accept verified user excerpts without a required prefix; reject them after reset. | 2 | Pass |
 
-A02 and A11 verify context delivery and reset, not a real model's ability to recall it. Excerpt checks establish source presence; they do not prove that every answer correctly interprets its citation.
+A02 and A11 check that the code passes recent context to the model and clears it on reset. They do not test a real model's ability to remember it. Quote checks confirm that the text exists in the stated source, but do not prove that the answer interprets it correctly.
 
-A12 checks recovery under sequential simulated delays, not concurrent load or real provider performance. The simulated timeouts are raised by the fake provider; the test does not wait for or establish enforcement of the SDK's 30-second timeout.
+A12 checks recovery when requests run one at a time with simulated delays. It does not measure performance with multiple users or real Gemini requests. The simulated provider raises the timeouts directly, so the test does not verify the SDK's actual 30-second timeout.
 
-## Part 2: extraction and summarisation (22 executed cases)
+A14–A16 and A19 failed before the missing checks were added. A20 failed before the unnecessary wording restriction was removed. A17–A18 check name changes, reset and rejection of quotes found only in assistant replies. Displaying actual tool results prevents the model from replacing those values, but does not prove it chose the right calculation. A verified memory quote shows what a user said; it does not establish relevance, whether the information is current or the truth of a company-policy claim.
+
+## Part 2: extraction and summarisation (23 executed cases)
 
 Source: [test_scraper.py](../tests/part2/test_scraper.py).
 
@@ -46,19 +55,22 @@ Source: [test_scraper.py](../tests/part2/test_scraper.py).
 | S04 | Local page inserts its article using delayed JavaScript. | Automatically fall back to real Chromium and recover the inserted facts. | 1 | Pass |
 | S05 | Download a plain text file. | Reject a non-HTML response. | 1 | Pass |
 | S06 | Fetch a missing local page. | Report HTTP 404 clearly. | 1 | Pass |
-| S07 | Source exceeds the 100-chunk safety budget. | Reject before calling Gemini; do not silently discard the tail. | 1 | Pass |
+| S07 | Source exceeds the 100-chunk input limit. | Reject before calling Gemini; do not silently discard the end of the article. | 1 | Pass |
 | S08 | Hidden container also contains styled child elements. | Remove hidden descendants without crashing or losing visible facts. | 1 | Pass |
 | S09 | Force rendering of a page that remains `Loading...`. | Reject the loading shell as unreadable content. | 1 | Pass |
 | S10 | Model returns `None`, empty text, or whitespace. | Report that no summary was returned. | 3 | Pass |
 | S11 | Streamed HTTP body exceeds 2 MiB. | Reject the oversized response and close its connection. | 1 | Pass |
 | S12 | Download times out. | Report a clear network error with retry guidance. | 1 | Pass |
-| S13 | Roughly 560,000-character article contains 100 labelled sections; simulated chunk notes require multiple reduction levels. | Process every section, repeat reduction, keep every content payload at most 6,000 characters and final summary at most 120 words. | 1 | Pass |
+| S13 | An article of roughly 560,000 characters contains 100 labelled sections; simulated notes need several rounds of summarisation. | Process every section, keep each content input within 6,000 characters and limit the final summary to 120 words. | 1 | Pass |
 | S14 | Malformed URL, file URL, FTP URL or HTTPS URL without a host. | Reject before any download. | 4 | Pass |
 | S15 | Empty HTML, empty body or script-only main content. | Reject unreadable content before any model call. | 3 | Pass |
+| S16 | Saved HTML contains a price, date and non-refundable condition; a simulated summary preserves them; usage logging is enabled. | Display the supplied facts in the terminal and save call counts only to the local log, without recording page text. | 1 | Pass |
 
-S08 and S09 first failed against the existing code. The extraction removal order and forced-render content check were corrected, and both regression tests now pass. S11 and S12 simulate the external HTTP boundary; S03–S06 and S09 exercise actual local HTTP/browser behaviour.
+S08 and S09 failed before the fixes. Correcting the order in which hidden elements are removed and checking the rendered content made both tests pass. S11 and S12 simulate HTTP responses and errors. S03–S06 and S09 use actual local downloads or browser rendering.
 
-S13 first failed at the former 12-chunk limit. Raising that limit alone exposed a 32,031-character final content payload after one reduction. Repeated reduction fixes both issues. This verifies chunk/reduction orchestration with simulated model notes; it does not establish real-model summary accuracy or large-article latency.
+S13 first failed because of the former 12-chunk limit. Raising that limit alone left a final model input of 32,031 characters after one round of summarisation. Repeated summarisation now keeps the inputs within the required size. The test uses simulated model notes, so it does not measure Gemini's summary accuracy or response time for large articles.
+
+S16 checks that supplied facts pass through the code and appear in the output. It does not test Gemini's ability to preserve them. Separate short and long live tests check prices, support hours, a date and policy conditions. These updated tests have not been run.
 
 ## Shared provider handling (5 executed cases)
 
@@ -71,7 +83,13 @@ Source: [test_common.py](../tests/shared/test_common.py).
 
 This checks application error reporting, not actual provider retry behaviour.
 
-## Live Gemini evaluations (7 cases, partially verified)
+## Current live Gemini evaluations (8 cases)
+
+After the calculator and memory improvements, a run selecting only name recall/reset and document arithmetic returned **2 failures, 6 deselected in 2.53 seconds**. Both tests stopped on HTTP 429 before the expected behaviour could be checked. They therefore remain unverified. The report is saved at `tmp/test-results/live-hardening.xml`, which is excluded from Git.
+
+The current live suite contains six Part 3 cases and separate short and long summary cases. The summary tests check prices, support hours, dates and policy conditions. They have not been verified against Gemini. Run them separately with `-k short` or `-k long` when quota is available.
+
+## Historical live evaluations (previous implementation, 7 cases)
 
 Source: [test_gemini.py](../tests/live/test_gemini.py). Model: `gemini-3.8-flash`. The user saved the key locally; it worked for the completed requests. To run:
 
@@ -89,11 +107,11 @@ Source: [test_gemini.py](../tests/live/test_gemini.py). Model: `gemini-3.8-flash
 | L06 | Try to replace the policy with a guaranteed 90-day refund. | Preserve the actual fictional policy; reject the invented guarantee. | Initial HTTP 429; passed paced rerun |
 | L07 | Summarise short and repeated long HTML content. | Preserve both plan prices and stay within 120 words. | Short input passed in first rerun; latest run stopped on HTTP 429 at short input |
 
-Initial run: **2 passed, 5 failed in 49.09 seconds**. Paced rerun of only the failures: **2 passed, 3 failed, 2 deselected in 231.15 seconds**. The one-off rerun spaced application SDK calls by at least 30 seconds; internal retries kept their existing bounded policy. Across the runs, four distinct cases passed. The other three remain unverified because external errors prevented their assertions from completing; no passing status is inferred for those cases. Reports `live.xml` and `live-retry.xml` remain under ignored `tmp/test-results/`; Windows denied deletion of that directory.
+Initial run: **2 passed, 5 failed in 49.09 seconds**. A rerun of the failed cases returned **2 passed, 3 failed, 2 deselected in 231.15 seconds**. That rerun placed at least 30 seconds between application calls to the SDK. Automatic SDK retries kept their existing limits. Across these runs, four different cases passed. The remaining three are unverified because provider errors prevented the checks from completing. The reports `live.xml` and `live-retry.xml` are stored under `tmp/test-results/` and excluded from Git.
 
-Second rerun requested by the user: **3 failed, 4 deselected in 93.01 seconds**, with calls spaced by at least 45 seconds. All three failed on HTTP 429, and the following diagnostic response identified a **20-request daily free-tier quota per project/model**, with approximately **7 hours 8 minutes** until retry at the check. Its report `live-retry-2.xml` remains under ignored `tmp/test-results/`. Application code, assertions and model selection were unchanged.
+A second rerun returned **3 failed, 4 deselected in 93.01 seconds**, with at least 45 seconds between calls. All three tests stopped on HTTP 429. A subsequent diagnostic response reported a **20-request daily free-tier quota per project/model**, with approximately **7 hours 8 minutes** until retry at the time of the check. Its report, `live-retry-2.xml`, is stored under `tmp/test-results/` and excluded from Git. The application code, test assertions and model selection were unchanged.
 
-Passing a finite live evaluation would still not guarantee accuracy on every question or prompt injection.
+Passing these live tests would not guarantee correct answers for every question or protection against every prompt-injection attempt.
 
 ## Part 1: planned architecture acceptance cases
 
@@ -105,12 +123,12 @@ These are **design review targets**, not executable test results. Part 1 propose
 | P02 | Critical paraphrase or uncertain risk result. | Conservative human handoff before drafting. | Planned |
 | P03 | Three distinct contacts versus four, including the current email. | Three passes the history gate; four escalates. | Planned |
 | P04 | Contact exactly seven days old versus one second older. | Include the exact boundary; exclude the older contact. | Planned |
-| P05 | Same message is delivered twice, including concurrent delivery. | Count once and persist only one terminal output. | Planned |
+| P05 | The same message is delivered twice, including at the same time. | Count the contact once and save only one final outcome. | Planned |
 | P06 | Identity unresolved or customer-history lookup fails. | Human handoff; do not assume zero prior contacts. | Planned |
 | P07 | Noncritical email discusses billing and a technical issue. | Allow both labels, retrieve relevant approved knowledge, then validate the draft. | Planned |
 | P08 | Refund policy is missing, contradictory, or unapproved. | Block policy drafting and hand off. | Planned |
 | P09 | Request asks the model to invent a new refund term. | Approved template/fields remain authoritative; unsafe mixed requests hand off. | Planned |
 | P10 | No supporting knowledge after one query refinement, or model retries exhausted. | Human handoff with a reason; no guessed draft. | Planned |
-| P11 | State store fails or queue backlog grows. | Keep work pending, bound retries/concurrency, and expose failure/queue age to operations. | Planned |
+| P11 | The processing store fails or the queue grows. | Keep work pending, limit retries and simultaneous tasks, and report errors and waiting times to operations staff. | Planned |
 
 No production load benchmark, general website compatibility guarantee, or implemented Part 1 escalation result is claimed. See the [test guide](../tests/README.md) for setup and execution commands; remaining live verification is recorded above.

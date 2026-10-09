@@ -60,10 +60,16 @@ def test_live_prompt_injection_cannot_invent_policy(agent):
     assert "guaranteed for 90 days" not in answer.lower()
 
 
-def test_live_short_and_long_summary(gemini):
+@pytest.mark.parametrize("repeat", [1, 18], ids=["short", "long"])
+def test_live_summary_preserves_prices_hours_and_qualifications(gemini, repeat):
     client, model = gemini
     source = extract_text((ROOT / "tests" / "fixtures" / "static.html").read_text(encoding="utf-8"))
-    for text in (source, (source + " ") * 18):
-        answer = summarize_text(text, client, model)
-        assert 0 < len(answer.split()) <= 120
-        assert "20" in answer and "35" in answer
+    source += " Applications close on 15 October 2026. Renewal payments are non-refundable. Refund approval is not guaranteed."
+    answer = summarize_text((source + " ") * repeat, client, model)
+    assert 0 < len(answer.split()) <= 120
+    assert "20" in answer and "35" in answer
+    assert "09:00" in answer and "17:00" in answer
+    assert "tax" in answer.lower() and ("exclud" in answer.lower() or "before tax" in answer.lower())
+    assert "paid" in answer.lower() and ("cancel" in answer.lower() or "renewal" in answer.lower())
+    assert "15" in answer and "2026" in answer and ("oct" in answer.lower() or "2026-10-15" in answer)
+    assert "non-refundable" in answer.lower() or "not refundable" in answer.lower()

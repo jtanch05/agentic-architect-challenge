@@ -2,28 +2,28 @@
 
 ## Hypothetical starting problem
 
-The assessment did not include a broken script. For this example, assume the original script downloads a page once, combines all paragraph text and sends it to the model in one request.
+The assessment did not include a broken script. This example therefore assumes a starting script that downloads a page once, combines all paragraph text and sends it to the model in one request.
 
 This approach has four main problems:
 
-- A normal HTTP request does not run JavaScript, so it may download an empty page shell instead of the article.
+- A normal HTTP request does not run JavaScript, so it may retrieve the page structure without the article content.
 - Extracting only paragraphs can miss headings and tables while still including menus and advertisements.
-- Sending all content in one request can cost more, take longer, exceed the model input limit, or miss important details.
+- Sending all content in one request can increase cost and response time, exceed the model's input limit or lead to missing details in the summary.
 - Telling the model to be concise does not guarantee a maximum summary length.
 
 ## Improved scraping
 
-`scraper.py` uses connection and download timeouts and limits HTML to 2 MiB. BeautifulSoup removes common menus, scripts and hidden elements, then searches for the main article content, including tables.
+`scraper.py` sets timeouts for connecting to and downloading a page, and limits the HTML to 2 MiB. BeautifulSoup removes common menus, scripts and hidden elements. It then looks for the main article content, including tables.
 
-If the extracted text is shorter than 200 characters, Playwright opens the page in a browser and runs its JavaScript. It waits up to five seconds for content after navigation. The `--render` option forces this step when the downloaded page contains placeholder text but not the article. HTTP errors are shown clearly.
+If the extracted text contains fewer than 200 characters, Playwright opens the page in a browser and runs its JavaScript. After navigation, it waits up to five seconds for content to appear. Use `--render` to request browser rendering explicitly, for example when the downloaded HTML contains substantial placeholder text but no article. HTTP errors are reported with clear messages.
 
 The scraper supports common HTML pages, but it cannot handle every site. It does not support external CSS visibility rules, iframes, infinite scrolling, login pages, paywalls or CAPTCHA. The 2 MiB limit applies to the resulting HTML, not all files downloaded by the browser. Only scrape pages you are allowed to access.
 
 ## Handling long content
 
-The script splits text into chunks of up to 6,000 characters. Gemini creates short notes for each chunk. The script then groups and summarises those notes again until they fit into one 6,000-character input. It then creates the final summary. Each set of notes has word and character limits, so the content becomes shorter at every stage. Every accepted chunk is processed, including the end of the article.
+The script splits the text into chunks of up to 6,000 characters. Gemini creates short notes for each chunk. The script combines these notes and summarises them again as needed until they fit into one 6,000-character input. Gemini then produces the final summary. Word and character limits make the notes shorter at each stage. Every accepted chunk is processed, including the end of the article.
 
-The script accepts at most **100 source chunks**. It rejects a larger input before calling the model, so it must be split into separate articles. This limit and the 2 MiB HTML limit are prototype choices to control cost and processing time.
+The script accepts up to **100 source chunks**. Larger inputs are rejected before any model call and must be divided into smaller inputs. This limit and the 2 MiB HTML limit are prototype choices intended to control cost and processing time.
 
 Repeated summarisation can remove useful details. Processing every chunk means every part of the article reaches the model, but it does not guarantee that every fact appears in the final summary.
 
@@ -31,7 +31,7 @@ Repeated summarisation can remove useful details. Processing every chunk means e
 
 The final summary is limited to **120 words**. The script counts words by whitespace. The assessment does not specify a word count, so 120 words is a design choice.
 
-If the first summary is too long, Gemini is asked once to shorten it. The code then applies a fixed word limit and keeps a complete sentence where possible. This final limit can remove details, so the logs record when it is used. A model output-token limit alone cannot guarantee a maximum word count.
+If the first summary is too long, the script asks Gemini once to shorten it. The code then enforces the word limit, ending at a complete sentence where possible. This final cut can remove details, so the logs record when it is needed. Limiting the model's output tokens alone does not guarantee a maximum word count.
 
 ## Run
 
@@ -47,4 +47,10 @@ Replace the example URL with a page you are allowed to scrape, or provide a loca
 
 The summary is printed to standard output. Logs on standard error show the extraction method, chunk count, summarisation progress, model response time, final word count and whether the fixed word limit was used.
 
-Each Gemini request has a 30-second timeout, with up to two attempts for selected transient HTTP failures. HTTP 429 is not automatically retried; check usage and wait for the rate or quota limit to reset. These limits apply to each request, not the whole article. Requests run one at a time. Articles near the chunk limit can need more than 100 model calls, including the repeated summarisation steps. This increases processing time and Gemini quota use. No real-provider throughput benchmark was run.
+To save usage information separately, add `--usage-log summary-usage.log`. This optional local file records the estimated minimum number of model calls, flags estimates above ten calls and counts calls made by the application, including failed calls. Usage information stays out of the terminal. The option adds no usage limit and does not record page text or credentials. Automatic retries by the Gemini SDK can make additional HTTP requests. `.log` files are excluded from Git.
+
+The local prototype limits input sizes and retry attempts. It does not automatically retry quota errors. Anyone using Gemini needs an API key with available quota. A future public service would also need authentication, limits on requests per user, controls on simultaneous requests and cost monitoring. API keys would remain on the server.
+
+Each Gemini attempt has a 30-second timeout. Selected temporary HTTP errors allow up to two attempts. HTTP 429 is not retried automatically; check your usage and wait for the rate or quota limit to reset. The timeout applies to each attempt, rather than the whole article.
+
+Requests run one at a time. Articles near the chunk limit can require more than 100 model calls because the notes may need several rounds of summarisation. This increases processing time and quota use. Processing capacity has not been measured with real Gemini requests.

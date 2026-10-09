@@ -1,6 +1,7 @@
 """Extract the main HTML content and summarise it with Gemini."""
 
 import argparse
+import json
 import logging
 import textwrap
 from pathlib import Path
@@ -42,9 +43,19 @@ def summarize_text(text, client, model):
         temperature=0,
         max_output_tokens=2048,
     )
+    model_calls = 0
+    usage = logging.getLogger("assessment.usage")
+    minimum_calls = 1 if len(chunks) == 1 else len(chunks) + 1
+    usage.debug(json.dumps({"event": "summary_usage_estimate", "minimum_calls": minimum_calls,
+                           "long_article": minimum_calls > 10}))
 
     def summarise(content, limit):
-        response = generate(client, model, f"Summarise in at most {limit} words.\nCONTENT:\n{content}", config)
+        nonlocal model_calls
+        model_calls += 1
+        try:
+            response = generate(client, model, f"Summarise in at most {limit} words.\nCONTENT:\n{content}", config)
+        finally:
+            usage.debug(json.dumps({"event": "summary_model_calls", "application_calls": model_calls}))
         if not response.text or not response.text.strip():
             raise RuntimeError("Gemini returned no summary; the response may have been blocked.")
         return response.text.strip()
@@ -154,12 +165,22 @@ def main():
     parser.add_argument("url", nargs="?", help="HTTP(S) article URL")
     parser.add_argument("--html", type=Path, help="Use saved HTML instead of fetching a URL")
     parser.add_argument("--render", action="store_true", help="Render JavaScript even when static content is substantial")
+    parser.add_argument("--usage-log", type=Path, help="Write usage diagnostics to a local file instead of the terminal")
     args = parser.parse_args()
     if bool(args.url) == bool(args.html) or (args.html and args.render):
         parser.error("Provide either a URL (optionally --render) or --html FILE.")
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     client = None
+    usage_handler = None
     try:
+        if args.usage_log:
+            usage_handler = logging.FileHandler(args.usage_log, encoding="utf-8")
+            usage_handler.setFormatter(logging.Formatter("%(message)s"))
+            usage = logging.getLogger("assessment.usage")
+            usage_settings = usage.level, usage.propagate
+            usage.setLevel(logging.DEBUG)
+            usage.propagate = False
+            usage.addHandler(usage_handler)
         if args.html:
             if args.html.stat().st_size > MAX_HTML_BYTES:
                 raise ValueError("Saved HTML exceeds the 2 MiB limit.")
@@ -173,6 +194,11 @@ def main():
     except (RuntimeError, ValueError, OSError) as exc:
         parser.exit(1, f"Error: {exc}\n")
     finally:
+        if usage_handler:
+            usage.removeHandler(usage_handler)
+            usage_handler.close()
+            usage.setLevel(usage_settings[0])
+            usage.propagate = usage_settings[1]
         if client:
             client.close()
 

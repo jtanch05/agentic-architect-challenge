@@ -1,6 +1,6 @@
 # Test guide
 
-The tests are grouped by the part of the assessment they check. Run commands from the repository root after activating the virtual environment.
+The tests are organised by assessment part. Run the commands from the repository root after activating the virtual environment.
 
 ## File organisation
 
@@ -39,7 +39,7 @@ Run actual Gemini evaluations with the key in the local `.env` file:
 python -m pytest tests/live --live -q
 ```
 
-Live cases are skipped by default. They consume quota and can fail because of provider availability or rate limits. Keep the API key private.
+Live tests are skipped by default. They use Gemini quota and may fail if the provider is unavailable or a rate limit is reached. Keep the API key private.
 
 ## Cases and expected outcomes
 
@@ -47,22 +47,24 @@ Live cases are skipped by default. They consume quota and can fail because of pr
 | --- | --- | --- |
 | [Part 2](part2/test_scraper.py) | Article and table extraction; navigation and hidden elements | Keep article facts and remove unrelated or hidden content. |
 | Part 2 | Static HTTP page, JavaScript article and loading shell | Extract the static article; render the JavaScript article; reject an unreadable loading shell. |
-| Part 2 | Long input, repeated reduction and over-budget input | Process every accepted source section, bound each content input and reject oversized sources before model calls. |
+| Part 2 | Long articles, repeated summarisation and oversized input | Process every accepted section, keep each model input within its size limit and reject oversized sources before model calls. |
 | Part 2 | Overlong or empty model output | Keep summaries within 120 words; report empty output clearly. |
 | Part 2 | Invalid URL, non-HTML content, HTTP 404, timeout and oversized download | Reject unsuitable input, report errors clearly and close the connection. |
 | [Part 3](part3/test_agent.py) | Valid, missing or fabricated document evidence | Accept a matching source; withhold answers without valid evidence. |
 | Part 3 | Name context, reset and 12-turn memory limit | Send recent completed context to the model; clear it on reset; remove older turns. |
 | Part 3 | Calculator selection, invalid expressions and tool budget | Execute supported arithmetic, return tool errors and enforce the call limit. |
 | Part 3 | Malformed output or API timeout | Report the failure, preserve earlier completed context and exclude failed turns. |
+| Part 3 | Incorrect numbers in model answers, incorrect answer labels and later calculation failures | Display actual tool results; reject an incorrect label or an earlier result used after a later failure. |
+| Part 3 | Invented personal quotes, assistant-only evidence, name changes, varied wording and reset | Render verified user excerpts without a required prefix; reject missing evidence and reset context. |
 | [Shared](shared/test_common.py) | Gemini HTTP 403, 429, 503 and 504; retry configuration | Show status-specific guidance without exposing provider response secrets or user prompts; exclude 429 from automatic retries. |
 | [Live Gemini](live/test_gemini.py) | Document facts, unknown answers, name recall/reset, calculator use, ordinary refund questions, policy injection and summaries | Confirm the expected behaviour with actual model responses. |
 
-Offline agent and summary tests simulate Gemini at the SDK boundary. They check application behaviour, not whether a real model consistently selects the right tool or interprets evidence correctly. HTTP and browser cases use local fixtures, including real Chromium. Part 1 is a proposed design and is not exercised by this suite.
+Offline agent and summary tests replace Gemini responses with simulated responses at the point where the application calls the SDK. They check the code's behaviour, but cannot show whether a real model consistently chooses the right tool or understands its sources. Tests for downloading and rendering pages use local sample files and real Chromium. Part 1 is a proposed design and is not covered by executable tests.
 
 ## Verification status
 
-After the diagnostics and error-handling update, `python -m pytest -q` passed **51 cases** and skipped **seven live cases** in **15.28 seconds** on 9 October 2026. Added cases check opt-in CLI diagnostics, status-specific error guidance, retry configuration and recovery across 20 sequential simulated slow-provider calls. This is test-suite runtime, not a production performance benchmark or a measurement of concurrent capacity.
+Following the calculator and memory improvements, the offline suite passed **64 cases** and skipped **eight live cases** on 9 October 2026. See [the verification record](../docs/test-cases.md) for the run details. These results do not measure production performance or capacity with multiple users.
 
-Earlier live runs completed four distinct cases successfully. Name memory/reset, ordinary refund questions and the complete long-summary case remain unverified after provider HTTP 429/503 errors. Those historical results are not a pass for the complete live suite.
+Earlier live runs passed four different cases using a previous version of the code. The latest memory/reset and calculator tests both stopped on HTTP 429. The updated short and long summary tests have not been run. Earlier successes do not establish that the current live suite passes.
 
 To save a local report, add `--junitxml=tmp/test-results/offline.xml` to the offline command. Reports under `tmp/` are ignored by Git.
