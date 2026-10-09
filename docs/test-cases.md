@@ -2,17 +2,17 @@
 
 Latest offline run: 9 October 2026. Earlier live runs: 9 October 2026. Windows, Python 3.13.1.
 
-**Latest result: 64 passed, 8 live cases skipped in 12.29 seconds.** The local report is saved at `tmp/test-results/after-refactor.xml`. This is the time taken to run the test suite, not a measure of production performance. Each input in a parameterised test counts as a separate pytest case.
+**Latest offline result: 68 passed in 14.42 seconds.** The local report is saved at `tmp/test-results/natural-name.xml`. This is the time taken to run the test suite, not a measure of production performance. Each input in a parameterised test counts as a separate pytest case.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/after-refactor.xml
+.\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/natural-name.xml
 ```
 
 The XML report can be regenerated under `tmp/`, which is excluded from Git. Tests call the actual application code and simulate responses where it calls the Gemini SDK. Tests for downloading and rendering pages use local sample files and real headless Chromium. This run did not use an external website or the live Gemini API.
 
-The same 64 tests passed before the code was reorganised, with eight live cases skipped, in 13.21 seconds. That report is saved at `tmp/test-results/before-refactor.xml`. The tests were unchanged between these runs.
+The same 64 offline tests passed before the code was reorganised, in 13.21 seconds. That report is saved at `tmp/test-results/before-refactor.xml`. The tests were unchanged between these runs.
 
-## Part 3: document agent (36 executed cases)
+## Part 3: document agent (40 executed cases)
 
 Source: [test_agent.py](../tests/part3/test_agent.py).
 
@@ -30,14 +30,17 @@ Source: [test_agent.py](../tests/part3/test_agent.py).
 | A10 | Calculator divides by zero; model then claims a successful result. | Send the tool error with its call ID; reject the claimed calculation. | 1 | Pass |
 | A11 | Complete 13 turns, then ask another question. | Only the latest 12 completed turns enter the next model request. | 1 | Pass |
 | A12 | 20 sequential requests, each delayed by 20 ms; requests 4, 9 and 16 time out. | Failed turns leave memory unchanged; later requests succeed; memory stays within 12 completed turns; all 20 requests have latency events. | 1 | Pass |
-| A13 | Run the CLI with and without `--verbose`, using a fake agent. | Both print answers; only verbose mode prints application events; HTTP information messages stay hidden. | 2 | Pass |
-| A14 | Calculator returns 980; model claims 9800 and labels the answer as calculation, document or memory. | Display the actual tool value for a calculation; reject the document and memory labels. | 3 | Pass |
+| A13 | Run the CLI with and without `--verbose`, using `/quit` and `/exit` and a fake agent. | Both commands exit without a model request; answers print in both modes; only verbose mode prints application events; HTTP information messages stay hidden. | 4 | Pass |
+| A14 | Calculator returns 980; model claims 9800 and labels the answer as calculation, document or memory. | Display and retain the actual tool value in JSON history for a calculation; reject the document and memory labels. | 3 | Pass |
 | A15 | Model labels an invented refund statement as memory, with missing or fabricated personal evidence. | Withhold unsupported memory answers. | 3 | Pass |
 | A16 | Model supplies a valid user quote but invents additional name or policy claims. | Display only the verified user quote and exclude the invented claims. | 1 | Pass |
 | A17 | User changes name, asks for it, then resets; model tries the old excerpt again. | Accept the verified updated excerpt before reset and reject it after reset. | 1 | Pass |
 | A18 | Personal excerpt exists only in an assistant reply. | Reject it as user-memory evidence. | 1 | Pass |
 | A19 | A calculation succeeds, a later calculation fails, and the model presents the earlier result as the answer. | Reject the answer and do not save the failed turn. | 1 | Pass |
-| A20 | User says "Call me Jerence" or "Prefer short answers, please", asks for that context, then resets. | Accept verified user excerpts without a required prefix; reject them after reset. | 2 | Pass |
+| A20 | User says "Call me Jerence", "my name is rre" or "Prefer short answers, please", asks for that context, then resets. | Use natural name replies for verified introductions, preserve other verified excerpts and reject them after reset. | 3 | Pass |
+| A21 | Model invents a name in its answer but supplies a valid user quote; ask a follow-up. | Send JSON history containing the verified user quote as the answer, excluding the invented name. | 1 | Pass |
+
+The new JSON-history, `/exit` and natural-name checks failed before their corrections and passed afterward. These tests check application behaviour using simulated model responses.
 
 A02 and A11 check that the code passes recent context to the model and clears it on reset. They do not test a real model's ability to remember it. Quote checks confirm that the text exists in the stated source, but do not prove that the answer interprets it correctly.
 
@@ -87,7 +90,11 @@ This checks application error reporting, not actual provider retry behaviour.
 
 ## Current live Gemini evaluations (8 cases)
 
-After the calculator and memory improvements, a run selecting only name recall/reset and document arithmetic returned **2 failures, 6 deselected in 2.53 seconds**. Both tests stopped on HTTP 429 before the expected behaviour could be checked. They therefore remain unverified. The report is saved at `tmp/test-results/live-hardening.xml`, which is excluded from Git.
+After the name wording update, two additional manual requests using `gemini-flash-lite-latest` succeeded: "my name is rre" and "what is my name" both returned "Your name is rre."
+
+After the conversation-history correction, seven manual requests using `gemini-flash-lite-latest` completed successfully on 9 October 2026: introduce a name, calculate `77*9/2+999` as 1345.5, recall that calculation request, state a location, recall the location, recall the name, and ask for the name after reset. Recall returned verified user quotes without calculator calls; the reset check returned the missing-information response. These manual checks are separate from the automated eight-case live suite and do not verify every possible question.
+
+An earlier automated run after the calculator and memory improvements selected only name recall/reset and document arithmetic and returned **2 failures, 6 deselected in 2.53 seconds**. Both tests stopped on HTTP 429 before their assertions completed. That automated run remains unverified. The report is saved at `tmp/test-results/live-hardening.xml`, which is excluded from Git.
 
 The current live suite contains six Part 3 cases and separate short and long summary cases. The summary tests check prices, support hours, dates and policy conditions. They have not been verified against Gemini. Run them separately with `-k short` or `-k long` when quota is available.
 

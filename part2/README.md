@@ -39,13 +39,16 @@ If the first summary is too long, the script asks Gemini once to shorten it. The
 
 ## Run
 
-From the repository root, after installing dependencies and configuring `.env`:
+Complete the [local setup](../README.md#local-setup), then run these commands from the repository root. Activate the environment in each new terminal session:
 
 ```powershell
+.\.venv\Scripts\Activate.ps1
 python -m part2.scraper https://example.com
 python -m part2.scraper https://example.com --render
 python -m part2.scraper --html PATH_TO_FILE
 ```
+
+If PowerShell blocks activation, use `.\.venv\Scripts\python.exe -m part2.scraper https://example.com` instead. Add the same options shown above as needed.
 
 Replace the example URL with a page you are allowed to scrape, or provide a local HTML file. Use `--render` when JavaScript content is missing from the downloaded HTML.
 

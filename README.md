@@ -28,20 +28,30 @@ Copy-Item .env.example .env
 
 Skip the copy command if `.env` already contains your settings. Set `GEMINI_API_KEY` in `.env` to your [Google AI Studio API key](https://aistudio.google.com/apikey). Use `GEMINI_MODEL` to select a model that supports function calling and is available to your account. The default is `gemini-3.8-flash`. Requests to Gemini count towards your API quota.
 
-Before running the commands below, activate the environment with `.\.venv\Scripts\Activate.ps1`. If PowerShell blocks activation, replace `python` in each command with `.\.venv\Scripts\python.exe`.
-
 On macOS/Linux, use `python3 -m venv .venv`, `source .venv/bin/activate`, `python -m pip install -r requirements.txt`, `python -m playwright install chromium`, and `cp .env.example .env`.
 
 ## Run
 
+After configuring `.env`, activate the virtual environment from the repository root. Activation makes `python` use the project's installed packages. Repeat the activation step whenever you open a new terminal session.
+
 ```powershell
+.\.venv\Scripts\Activate.ps1
 python -m part3.agent
 python -m part2.scraper https://example.com
 ```
 
+If PowerShell blocks activation, run the project's Python executable directly:
+
+```powershell
+.\.venv\Scripts\python.exe -m part3.agent
+.\.venv\Scripts\python.exe -m part2.scraper https://example.com
+```
+
+This alternative does not require activation. For other commands in this guide, replace `python` with `.\.venv\Scripts\python.exe` if the environment is not activated.
+
 Replace the example URL with a page you are allowed to scrape. Add `--render` for a JavaScript page. To summarise a local HTML file, run `python -m part2.scraper --html PATH_TO_FILE`.
 
-Part 3 commands: `/reset` clears session memory and `/quit` exits. Its README includes a sequence of questions that demonstrates document answers, memory and tool selection.
+Part 3 commands: `/reset` clears session memory; `/quit` or `/exit` exits. Its README includes a sequence of questions that demonstrates document answers, memory and tool selection.
 
 ## Tests
 
@@ -55,7 +65,7 @@ python -m pytest -q
 
 The tests are organised into Part 2, Part 3, shared API error handling and live Gemini evaluations. The [test guide](tests/README.md) lists the cases, expected outcomes and commands for each group. Offline tests use simulated model responses. Tests for downloading and rendering pages use a local server and real Chromium.
 
-Live tests are skipped unless explicitly enabled. To run them with a local API key:
+To run live tests with a local API key, include `--live`:
 
 ```powershell
 python -m pytest tests/live --live -q

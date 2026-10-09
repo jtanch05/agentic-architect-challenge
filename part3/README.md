@@ -4,11 +4,14 @@ The agent answers questions using a fictional ClearDesk support handbook. The ha
 
 ## Run
 
-From the repository root, after installing dependencies and configuring `.env`:
+Complete the [local setup](../README.md#local-setup), then run these commands from the repository root. Activate the environment in each new terminal session:
 
 ```powershell
+.\.venv\Scripts\Activate.ps1
 python -m part3.agent
 ```
+
+If PowerShell blocks activation, run `.\.venv\Scripts\python.exe -m part3.agent` directly. This uses the project's installed packages without activating the environment.
 
 Try these questions in the same session:
 
@@ -46,13 +49,17 @@ The agent keeps the latest 12 completed conversation turns. A turn contains the 
 
 Memory lasts only for the current session. `/reset` or closing the program clears it. Information from an older turn may be forgotten after that turn is removed from the 12-turn history.
 
-A memory answer must include an exact quote from a user message still in memory or from the current input, such as "Call me Jerence." Quotes from assistant replies and invented text are rejected. Python displays the verified quote as `You said: ...`, instead of the model's freely written memory answer. This attributes the statement to the user and does not treat it as verified company policy.
+Use `/quit` or `/exit` to close the program. Completed replies are stored as JSON containing the validated answer, so later requests receive a consistent response format and the actual calculator result.
+
+A memory answer must include an exact quote from a user message still in memory or from the current input, such as "Call me Jerence." Quotes from assistant replies and invented text are rejected. For a simple introduction such as "My name is Jerence" or "Call me Jerence", Python replies "Your name is Jerence." using the verified name. Other memory replies display the verified quote as `You said: ...`, rather than the model's freely written answer. This attributes the statement to the user and does not treat it as verified company policy.
+
+The agent can also recall an earlier request. For example, asking what was calculated earlier can return the original arithmetic expression as a user quote without running the calculator again.
 
 ## Checking answers against the document
 
 Gemini returns a JSON response that identifies whether the answer comes from the document, conversation memory, a calculation, or missing information.
 
-An answer based on the document must include an existing section ID and an exact quote from that section. If these checks fail, the proposed answer is withheld. Questions the document cannot answer receive a standard message explaining that the information was not found. Calculation answers require a successful tool result and display its actual value. Memory answers display verified quotes from user messages.
+An answer based on the document must include an existing section ID and an exact quote from that section. If these checks fail, the proposed answer is withheld. Questions the document cannot answer receive a standard message explaining that the information was not found. Calculation answers require a successful tool result and display its actual value. Memory answers use verified excerpts from user messages, with natural wording for simple name introductions.
 
 These checks reduce unsupported answers, but finding a matching quote does not prove that the model understood it correctly. Gemini still chooses the calculator inputs and the memory quote. The code checks that the quote exists, but does not prove that it is relevant, up to date or personal information. It also does not prove that the calculation matches the question. Live model tests and human review are still needed.
 

@@ -39,7 +39,7 @@ Run actual Gemini evaluations with the key in the local `.env` file:
 python -m pytest tests/live --live -q
 ```
 
-Live tests are skipped by default. They use Gemini quota and may fail if the provider is unavailable or a rate limit is reached. Keep the API key private.
+Use `--live` to enable the live tests. They use Gemini quota and may fail if the provider is unavailable or a rate limit is reached. Keep the API key private.
 
 ## Cases and expected outcomes
 
@@ -63,8 +63,8 @@ Offline agent and summary tests replace Gemini responses with simulated response
 
 ## Verification status
 
-The same offline suite passed **64 cases** and skipped **eight live cases** both before and after the code was reorganised on 9 October 2026. See [the verification record](../docs/test-cases.md) for the run details. These results do not measure production performance or capacity with multiple users.
+The latest offline suite passed **68 cases** on 9 October 2026, including checks for natural name replies, JSON conversation history and both exit commands. The earlier 64-case suite passed before and after the code was reorganised. See [the verification record](../docs/test-cases.md) for the run details. These results do not measure production performance or capacity with multiple users.
 
-Earlier live runs passed four different cases using a previous version of the code. The latest memory/reset and calculator tests both stopped on HTTP 429. The updated short and long summary tests have not been run. Earlier successes do not establish that the current live suite passes.
+Manual live checks with `gemini-flash-lite-latest` confirmed name and location recall, arithmetic, recall of an earlier calculation request, and memory reset after the history correction. Earlier automated memory/reset and calculator tests stopped on HTTP 429. The updated short and long summary tests have not been run. These checks do not establish that the entire current live suite passes.
 
 To save a local report, add `--junitxml=tmp/test-results/offline.xml` to the offline command. Reports under `tmp/` are ignored by Git.

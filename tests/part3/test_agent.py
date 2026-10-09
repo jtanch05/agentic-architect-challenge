@@ -45,6 +45,22 @@ def test_name_context_is_available_on_later_turn():
     assert "Jerence" not in agent.ask("What is my name?")
 
 
+def test_follow_up_receives_validated_json_history():
+    client = Mock()
+    client.models.generate_content.return_value = model_response(json.dumps({
+        "kind": "memory", "answer": "Your name is Invented.", "sources": [],
+        "memory_quote": "My name is Test.",
+    }))
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    agent.ask("My name is Test.")
+    agent.ask("What is my name?")
+    messages = client.models.generate_content.call_args.kwargs["contents"]
+    previous_answer = json.loads(next(message.parts[0].text for message in messages if message.role == "model"))
+    assert previous_answer["kind"] == "memory"
+    assert previous_answer["answer"] == "Your name is Test."
+    assert previous_answer["memory_quote"] == "My name is Test."
+
+
 def test_arithmetic_executes_selected_calculator_and_returns_result():
     call = types.FunctionCall(name="calculator", args={"expression": "35 * 28"})
     content = types.Content(role="model", parts=[types.Part(function_call=call)])
@@ -77,6 +93,7 @@ def test_model_cannot_replace_the_calculator_result(kind):
     if kind == "calculation":
         answer = agent.ask("What is the Team fee for 28 users?")
         assert "980" in answer and "9800" not in answer and "[S1]" in answer
+        assert json.loads(agent.turns[-1][-1].parts[0].text)["answer"] == answer
     else:
         with pytest.raises(RuntimeError, match="invalid answer"):
             agent.ask("What is the Team fee for 28 users?")
@@ -108,11 +125,12 @@ def test_memory_answer_is_rendered_from_user_evidence_not_model_prose():
     assert "Invented" not in answer and "90" not in answer
 
 
-@pytest.mark.parametrize("context,question", [
-    ("Call me Jerence.", "What should you call me?"),
-    ("Prefer short answers, please.", "What answer style do I prefer?"),
+@pytest.mark.parametrize("context,question,expected", [
+    ("Call me Jerence.", "What should you call me?", "Your name is Jerence."),
+    ("my name is rre", "What is my name?", "Your name is rre."),
+    ("Prefer short answers, please.", "What answer style do I prefer?", "You said: Prefer short answers, please."),
 ])
-def test_memory_accepts_user_context_without_a_required_prefix(context, question):
+def test_memory_accepts_user_context_without_a_required_prefix(context, question, expected):
     from part3.agent import UNKNOWN
 
     client = Mock()
@@ -120,8 +138,8 @@ def test_memory_accepts_user_context_without_a_required_prefix(context, question
         "kind": "memory", "answer": "Personal context.", "sources": [], "memory_quote": context,
     }))
     agent = DocumentAgent(client, "test-model", "[S1] Example.")
-    assert agent.ask(context) == f"You said: {context}"
-    assert agent.ask(question) == f"You said: {context}"
+    assert agent.ask(context) == expected
+    assert agent.ask(question) == expected
     agent.reset()
     assert agent.ask(question) == UNKNOWN
 
@@ -318,7 +336,8 @@ def test_sequential_slow_provider_requests_recover_and_keep_memory_bounded(caplo
 
 
 @pytest.mark.parametrize("verbose", [False, True])
-def test_cli_diagnostics_are_opt_in(verbose):
+@pytest.mark.parametrize("exit_command", ["/quit", "/exit"])
+def test_cli_diagnostics_are_opt_in(verbose, exit_command):
     import subprocess
     import sys
     from common import ROOT
@@ -336,7 +355,9 @@ fake = Mock(last_tools=[])
 fake.ask.side_effect = answer
 with patch.object(agent, "create_client", return_value=(Mock(), "test-model")), patch.object(agent, "DocumentAgent", return_value=fake), patch("builtins.input", side_effect=["hello", "/quit"]):
     agent.main()
+fake.ask.assert_called_once_with("hello")
 '''
+    script = script.replace('"/quit"', repr(exit_command))
     result = subprocess.run([sys.executable, "-c", script] + (["--verbose"] if verbose else []),
                             cwd=ROOT, capture_output=True, text=True, check=True)
     assert "Agent: Hello." in result.stdout
