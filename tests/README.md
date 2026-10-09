@@ -54,14 +54,14 @@ Live cases are skipped by default. They consume quota and can fail because of pr
 | Part 3 | Name context, reset and 12-turn memory limit | Send recent completed context to the model; clear it on reset; remove older turns. |
 | Part 3 | Calculator selection, invalid expressions and tool budget | Execute supported arithmetic, return tool errors and enforce the call limit. |
 | Part 3 | Malformed output or API timeout | Report the failure, preserve earlier completed context and exclude failed turns. |
-| [Shared](shared/test_common.py) | Gemini HTTP 403, 429 and 503 | Show the status without exposing provider response secrets or user prompts. |
+| [Shared](shared/test_common.py) | Gemini HTTP 403, 429, 503 and 504; retry configuration | Show status-specific guidance without exposing provider response secrets or user prompts; exclude 429 from automatic retries. |
 | [Live Gemini](live/test_gemini.py) | Document facts, unknown answers, name recall/reset, calculator use, ordinary refund questions, policy injection and summaries | Confirm the expected behaviour with actual model responses. |
 
 Offline agent and summary tests simulate Gemini at the SDK boundary. They check application behaviour, not whether a real model consistently selects the right tool or interprets evidence correctly. HTTP and browser cases use local fixtures, including real Chromium. Part 1 is a proposed design and is not exercised by this suite.
 
 ## Verification status
 
-After this reorganisation, `python -m pytest -q` passed **46 cases** and skipped **seven live cases** in **11.82 seconds** on 9 October 2026. The same assertions and fixtures were retained. This is test-suite runtime, not a production performance benchmark.
+After the diagnostics and error-handling update, `python -m pytest -q` passed **51 cases** and skipped **seven live cases** in **15.28 seconds** on 9 October 2026. Added cases check opt-in CLI diagnostics, status-specific error guidance, retry configuration and recovery across 20 sequential simulated slow-provider calls. This is test-suite runtime, not a production performance benchmark or a measurement of concurrent capacity.
 
 Earlier live runs completed four distinct cases successfully. Name memory/reset, ordinary refund questions and the complete long-summary case remain unverified after provider HTTP 429/503 errors. Those historical results are not a pass for the complete live suite.
 

@@ -7,7 +7,10 @@ import logging
 import math
 import operator
 import re
+import sys
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from threading import Event, Thread
 
 from google.genai import types
 
@@ -15,6 +18,32 @@ from common import ROOT, create_client, generate, log_event
 
 UNKNOWN = "I could not find that information in the supplied document."
 OPERATORS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
+
+
+@contextmanager
+def thinking():
+    """Show a spinner while waiting, and clear it on success or failure."""
+    if not sys.stdout.isatty():
+        yield
+        return
+    stopped = Event()
+
+    def animate():
+        frames = "|/-\\"
+        index = 0
+        while not stopped.is_set():
+            print(f"\rThinking... {frames[index % len(frames)]}", end="", flush=True)
+            index += 1
+            stopped.wait(0.1)
+
+    spinner = Thread(target=animate, daemon=True)
+    spinner.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        spinner.join()
+        print("\r" + " " * 13 + "\r", end="", flush=True)
 
 
 def calculator(expression: str) -> float:
@@ -152,8 +181,10 @@ class DocumentAgent:
 def main():
     parser = argparse.ArgumentParser(description="Chat with the fictional OrbitDesk handbook.")
     parser.add_argument("--document", type=str, default=str(ROOT / "part3" / "sample_document.md"))
+    parser.add_argument("--verbose", action="store_true", help="Show application diagnostics on standard error")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.basicConfig(level=logging.WARNING, format="%(message)s")
+    logging.getLogger("assessment").setLevel(logging.INFO if args.verbose else logging.WARNING)
     client = None
     try:
         document = Path(args.document).read_text(encoding="utf-8")
@@ -173,7 +204,9 @@ def main():
                 print("Conversation cleared.")
                 continue
             try:
-                print("Agent:", agent.ask(question))
+                with nullcontext() if args.verbose else thinking():
+                    answer = agent.ask(question)
+                print("Agent:", answer)
                 print("Tools:", ", ".join(agent.last_tools) or "none")
             except (RuntimeError, ValueError) as exc:
                 print("Error:", exc)

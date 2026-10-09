@@ -65,7 +65,9 @@ Live tests consume Gemini quota. Offline results do not establish real-model acc
 
 ## Logging and limitations
 
-Logs on standard error show processing steps, model response times, chunk counts, tool use and summary-length checks. They do not include API keys, document text or user prompts. Requests run one at a time. This is a prototype and has not been load tested.
+Part 2 logs show processing steps, model response times, chunk counts and summary-length checks. Part 3 normally shows a waiting spinner, answers and tools used; add `--verbose` for application events on standard error. Application events omit API keys, document text and user prompts. Requests run one at a time. A simulated slow-provider check verifies sequential recovery and bounded memory; real throughput and concurrent load have not been measured.
+
+HTTP 429 quota/rate-limit errors are reported without an automatic retry. Selected transient HTTP failures allow at most two attempts, each with a 30-second timeout. Error messages distinguish quota limits, permissions and provider timeouts.
 
 - Part 1 is a proposed email system. Its safety checks would need to be implemented and tested in a real service.
 - Part 2 handles ordinary public HTML and can render JavaScript pages within time and size limits. It does not support login pages, paywalls, CAPTCHA, infinite scrolling or every site layout.

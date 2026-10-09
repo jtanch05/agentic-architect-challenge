@@ -172,3 +172,64 @@ def test_context_budget_keeps_latest_twelve_completed_turns():
     text = " ".join(part.text or "" for message in messages for part in message.parts)
     assert "context-00" not in text
     assert all(f"context-{index:02d}" in text for index in range(1, 13))
+
+
+def test_sequential_slow_provider_requests_recover_and_keep_memory_bounded(caplog):
+    import logging
+    import time
+    import httpx
+
+    client = Mock()
+    completed = 0
+
+    def slow_reply(**request):
+        time.sleep(0.02)
+        if client.models.generate_content.call_count in {4, 9, 16}:
+            raise httpx.ReadTimeout("simulated provider timeout")
+        return model_response('{"kind":"memory","answer":"Acknowledged.","sources":[]}')
+
+    client.models.generate_content.side_effect = slow_reply
+    agent = DocumentAgent(client, "test-model", "[S1] Example.")
+    with caplog.at_level(logging.INFO, logger="assessment"):
+        for index in range(20):
+            previous_turns = list(agent.turns)
+            if index + 1 in {4, 9, 16}:
+                with pytest.raises(RuntimeError, match="timed out"):
+                    agent.ask(f"Remember item {index}.")
+                assert agent.turns == previous_turns
+            else:
+                agent.ask(f"Remember item {index}.")
+                completed += 1
+            assert len(agent.turns) == min(completed, 12)
+    events = [json.loads(record.message) for record in caplog.records if record.name == "assessment"]
+    requests = [event for event in events if event["event"] in {"model_response", "model_error"}]
+    assert len(requests) == 20
+    assert sum(event["event"] == "model_error" for event in requests) == 3
+    assert all(event["latency_ms"] >= 10 for event in requests)
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_cli_diagnostics_are_opt_in(verbose):
+    import subprocess
+    import sys
+    from common import ROOT
+
+    script = '''
+import logging
+from unittest.mock import Mock, patch
+from part3 import agent
+from common import log_event
+def answer(question):
+    log_event("agent_answer", tools=[], retained_turns=1)
+    logging.getLogger("httpx").info("HTTP diagnostic must stay hidden")
+    return "Hello."
+fake = Mock(last_tools=[])
+fake.ask.side_effect = answer
+with patch.object(agent, "create_client", return_value=(Mock(), "test-model")), patch.object(agent, "DocumentAgent", return_value=fake), patch("builtins.input", side_effect=["hello", "/quit"]):
+    agent.main()
+'''
+    result = subprocess.run([sys.executable, "-c", script] + (["--verbose"] if verbose else []),
+                            cwd=ROOT, capture_output=True, text=True, check=True)
+    assert "Agent: Hello." in result.stdout
+    assert ('"event": "agent_answer"' in result.stderr) == verbose
+    assert "HTTP diagnostic must stay hidden" not in result.stderr

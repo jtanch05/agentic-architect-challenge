@@ -19,9 +19,11 @@ The following assumptions would need confirmation from the business:
 
 ![Customer-support email architecture](system-design.png)
 
-The diagram shows the main processing steps, approved information sources, the Gemini connection, and the two outcomes: a saved draft or a human support ticket. The flow below also shows the retry and search-improvement paths.
+The diagram shows the main processing steps, approved information sources, the agent's Gemini connection, and the two outcomes: a saved draft or a human support ticket. The flow below expands classification and the single search-refinement step. Infrastructure retries and pending states are described under failure handling.
 
 Solid arrows show processing order. Dashed arrows show data access or API calls, with two arrowheads for two-way exchanges. Intake reads prior outcomes and records the contact before the escalation check uses its history. The draft reaches validation together with its source references. The outputs also save the final processing state; these writes are omitted from the overview to keep the diagram readable.
+
+The escalation check combines mandatory phrase and contact-count rules with a language classifier for paraphrased incidents. If Gemini provides that classification, it is a separate request before drafting; the overview shows the agent's API connection rather than every model call. A classifier failure or uncertain result goes to a human. The gate passes only when no escalation condition is found and the required checks complete successfully.
 
 Before writing a reply, the system checks for data loss, a service outage, or a security breach. It also checks whether the customer has contacted support more than three times in seven days. Any of these conditions sends the email to a human. Missing customer details, incomplete history, or uncertain risk also blocks drafting.
 
@@ -32,19 +34,22 @@ flowchart TD
     A[Email + message ID] --> B[Record contact and check prior outcome]
     B -->|Already processed| Z[Return existing outcome]
     B -->|New| C[Mandatory risk and history check]
-    C -->|Critical or unresolved| H[Save human ticket and reason]
+    C -->|Critical, over 3 contacts, or unresolved| H[Save human ticket and reason]
     C -->|Passed| D[Classify and identify information needed]
-    D --> E[Search approved PDF and FAQ knowledge]
+    D -->|Categories resolved| E[Search approved PDF and FAQ knowledge]
+    D -->|Unresolved or model failure| H
+    E -->|Retrieval failure| H
     E -->|Insufficient| R[Refine search once]
-    R -->|Still insufficient| H
-    R -->|Supported| F[Prepare draft]
+    R -->|Still insufficient or failed| H
+    R -->|Supported| F[Prepare draft without refund terms]
     E -->|Supported| F
-    F --> G[Validate evidence and policy constraints]
+    F -->|Draft and source references| G[Validate evidence and insert approved refund terms if relevant]
+    F -->|Model failure| H
     G -->|Failed| H
     G -->|Passed| I[Save draft and processing outcome]
 ```
 
-Critical emails are flagged immediately. A separate task can assign categories to help staff organise the ticket, but it cannot write a reply or delay the handoff.
+Critical emails and repeat-contact cases are flagged immediately. After handoff, a separate classification task assigns one or more categories without drafting or delaying the handoff. Staff assign the categories if the model fails or cannot classify confidently.
 
 ## Component responsibilities
 
@@ -55,7 +60,7 @@ Critical emails are flagged immediately. A separate task can assign categories t
 | Email classifier | Assign one or more categories: Billing, Technical, and Feedback. Mark unclear cases as unresolved. The model cannot override the escalation check. |
 | Knowledge search | Search approved PDF and FAQ sections, keeping the document ID, version, and page or section reference. The search index is built from these sources and can be rebuilt. |
 | Agent with limited actions | Choose searches that match the customer's question and review the results. Allow one improved search if the first result is insufficient. If evidence is still missing, send the case to a human. The agent cannot send emails, issue refunds, or skip the escalation check. |
-| Reply writer and checker | Write the draft from retrieved information. Require source references, check that quoted text exists, and apply the policy rules. Do not produce a reply without support. |
+| Reply writer and checker | Write non-refund text from retrieved information. Pass the source references with the draft and check whether they support its claims, not just whether a citation exists. Code inserts approved refund text only when relevant. Reject unsupported claims and free-form refund statements. |
 | Human support queue | Save the handoff reason, any available categories, and useful source references. Staff can access the original email through the protected ticket system. |
 
 ## Preventing incorrect refund-policy statements
@@ -67,6 +72,8 @@ Finding relevant information and telling an LLM to follow it does not guarantee 
 3. Fill the approved template with verified deadlines, eligibility rules, and exclusions. Code inserts this text directly, so the model cannot rewrite the policy terms.
 4. Use this process for every statement about refunds or eligibility. Send mixed or unclear requests to a human when the template cannot answer them safely. Do not say that a refund is approved without verified customer information and human authorisation.
 
+For a refund-only question, the reply uses the approved template; no free-form policy wording is accepted from the model. A mixed reply is saved only if its policy statements come entirely from the approved template and its remaining claims are supported. If the checker cannot establish this, it routes the case to a human. This is a proposed control that still needs implementation and adversarial testing.
+
 The LLM can identify what the customer wants or choose a search query, but it cannot change approved policy terms. Part 3 demonstrates document-based answers; it does not implement this refund-template process.
 
 ## Data records
@@ -76,7 +83,7 @@ The LLM can identify what the customer wants or choose a search query, but it ca
 - `KnowledgeSection`: document ID, version, section or page ID, text and approval status.
 - `RefundPolicy`: policy ID and version, approved fields, approved template and source references.
 
-Customer-history and processing records are the source of truth. The search index is a separate copy used to find information. A production version should use database transactions to prevent duplicate contacts and update processing states safely. When several emails from one customer arrive together, all contacts must be counted so the fourth contact cannot avoid escalation.
+Customer-history and processing records are the source of truth. The search index is a separate copy used to find information. A production version should use database transactions to prevent duplicate contacts and update processing states safely. Contacts for one customer must be recorded and counted in received-time order, with a stable tie-breaker for equal timestamps. This keeps concurrent workers from checking a later email before earlier eligible contacts are recorded. An email discovered late requires its affected counts to be rechecked before a pending draft is released.
 
 ## Handling failures
 
@@ -85,7 +92,8 @@ Customer-history and processing records are the source of truth. The search inde
 | Customer identity is unclear or history cannot be loaded | Send the case to a human. Do not assume there were no previous contacts. |
 | A critical phrase is found, similar wording is classified as critical, or risk is uncertain | Flag the email before drafting and save a human support ticket. Test missed detections and negative statements separately. |
 | Knowledge is missing or conflicting after one improved search | Send the case to a human with an explanation. Do not guess a reply. |
-| The model times out, reaches a quota limit, returns invalid categories, or provides unsupported evidence | Retry only within a set limit, then send the case to a human. |
+| The model times out or has a temporary server failure | Retry within a set limit, then send the case to a human. |
+| The model reaches a quota limit, returns unresolved categories, or provides unsupported evidence | Send the case to a human. Do not repeatedly retry an exhausted quota or save an unsupported draft. |
 | Refund policy is unapproved or conflicting | Block the refund reply and ask a human to handle it. |
 | The same email arrives again or a worker retries it | Use the message ID and saved processing state to avoid counting the contact or saving the outcome twice. |
 | The processing store is unavailable | Keep the task pending, retry within a set limit and alert the operations team. Do not draft or claim that a ticket has been saved. |

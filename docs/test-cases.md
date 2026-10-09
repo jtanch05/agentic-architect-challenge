@@ -2,7 +2,7 @@
 
 Latest offline run: 9 October 2026. Earlier live runs: 9 October 2026. Windows, Python 3.13.1.
 
-**Latest executed result: 46 passed, 7 skipped in 11.82 seconds.** This is suite runtime, not a production throughput measurement. Parameterised inputs count as separate pytest cases.
+**Latest executed result: 51 passed, 7 skipped in 19.51 seconds.** This is suite runtime, not a production throughput measurement. Parameterised inputs count as separate pytest cases.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q --junitxml=tmp/test-results/offline.xml
@@ -10,7 +10,7 @@ Latest offline run: 9 October 2026. Earlier live runs: 9 October 2026. Windows, 
 
 An ignored XML report can be regenerated under `tmp/`. Tests use the real application interfaces. Gemini is simulated at its external SDK boundary; HTTP/browser cases use local fixtures, including real headless Chromium. No external website or live Gemini model was used in this run.
 
-## Part 3: document agent (21 executed cases)
+## Part 3: document agent (24 executed cases)
 
 Source: [test_agent.py](../tests/part3/test_agent.py).
 
@@ -27,8 +27,12 @@ Source: [test_agent.py](../tests/part3/test_agent.py).
 | A09 | Document answer has no sources, a nonexistent section, or a blank quote. | Withhold the answer in each case. | 3 | Pass |
 | A10 | Calculator divides by zero; model then claims a successful result. | Send the tool error with its call ID; reject the claimed calculation. | 1 | Pass |
 | A11 | Complete 13 turns, then ask another question. | Only the latest 12 completed turns enter the next model request. | 1 | Pass |
+| A12 | 20 sequential requests, each delayed by 20 ms; requests 4, 9 and 16 time out. | Failed turns leave memory unchanged; later requests succeed; memory stays within 12 completed turns; all 20 requests have latency events. | 1 | Pass |
+| A13 | Run the CLI with and without `--verbose`, using a fake agent. | Both print answers; only verbose mode prints application events; HTTP information messages stay hidden. | 2 | Pass |
 
 A02 and A11 verify context delivery and reset, not a real model's ability to recall it. Excerpt checks establish source presence; they do not prove that every answer correctly interprets its citation.
+
+A12 checks recovery under sequential simulated delays, not concurrent load or real provider performance. The simulated timeouts are raised by the fake provider; the test does not wait for or establish enforcement of the SDK's 30-second timeout.
 
 ## Part 2: extraction and summarisation (22 executed cases)
 
@@ -56,13 +60,14 @@ S08 and S09 first failed against the existing code. The extraction removal order
 
 S13 first failed at the former 12-chunk limit. Raising that limit alone exposed a 32,031-character final content payload after one reduction. Repeated reduction fixes both issues. This verifies chunk/reduction orchestration with simulated model notes; it does not establish real-model summary accuracy or large-article latency.
 
-## Shared provider handling (3 executed cases)
+## Shared provider handling (5 executed cases)
 
 Source: [test_common.py](../tests/shared/test_common.py).
 
 | ID | Scenario / input | Expected outcome | Cases | Result |
 | --- | --- | --- | --- | --- |
-| C01 | Simulated Gemini HTTP 403, 429 or 503 includes a synthetic secret in its error body. | Show status and configuration/quota guidance; logs and user error omit response secrets and prompt text. | 3 | Pass |
+| C01 | Simulated Gemini HTTP 403, 429, 503 or 504 includes a synthetic secret in its error body. | Show status-specific guidance and error latency; application logs and user error omit response secrets and prompt text. | 4 | Pass |
+| C02 | Inspect client configuration using a fake client factory. | 30-second timeout, two maximum attempts, transient 503/504 retries enabled and 429 excluded. | 1 | Pass |
 
 This checks application error reporting, not actual provider retry behaviour.
 
@@ -108,4 +113,4 @@ These are **design review targets**, not executable test results. Part 1 propose
 | P10 | No supporting knowledge after one query refinement, or model retries exhausted. | Human handoff with a reason; no guessed draft. | Planned |
 | P11 | State store fails or queue backlog grows. | Keep work pending, bound retries/concurrency, and expose failure/queue age to operations. | Planned |
 
-No production load benchmark, general website compatibility guarantee, or implemented Part 1 escalation result is claimed. See [verification.md](verification.md) for setup checks and remaining verification.
+No production load benchmark, general website compatibility guarantee, or implemented Part 1 escalation result is claimed. See the [test guide](../tests/README.md) for setup and execution commands; remaining live verification is recorded above.

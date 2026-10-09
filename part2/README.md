@@ -47,4 +47,4 @@ Replace the example URL with a page you are allowed to scrape, or provide a loca
 
 The summary is printed to standard output. Logs on standard error show the extraction method, chunk count, summarisation progress, model response time, final word count and whether the fixed word limit was used.
 
-Each Gemini request has a 30-second timeout, with up to two attempts in total. Requests run one at a time. Articles near the chunk limit can need more than 100 model calls, including the repeated summarisation steps. This increases processing time and Gemini quota use. No performance benchmark was run.
+Each Gemini request has a 30-second timeout, with up to two attempts for selected transient HTTP failures. HTTP 429 is not automatically retried; check usage and wait for the rate or quota limit to reset. These limits apply to each request, not the whole article. Requests run one at a time. Articles near the chunk limit can need more than 100 model calls, including the repeated summarisation steps. This increases processing time and Gemini quota use. No real-provider throughput benchmark was run.
